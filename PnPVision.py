@@ -3,7 +3,7 @@ import cv2
 import sys
 import os
 
-os.system("v4l2-ctl -d /dev/video0 -c exposure_auto=1 -c white_balance_temperature_auto=0 -c brightness=0")
+os.system("v4l2-ctl -d /dev/video1 -c exposure_auto=1 -c exposure_absolute=20 -c white_balance_temperature_auto=0")
 
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -15,9 +15,9 @@ distortCoeffs = np.asarray([0.24562790316739747, -4.700752268937957, 0.003165017
 
 # 3D coordinates of the points we think we can find on the box.
 objectPoints = np.asarray([[0, 0, 0],
-                           [0, 0, 1],
-                           [1, 0, 1],
-                           [1, 0, 0]], dtype=np.float32)
+                           [0, 0, 1.08333333],
+                           [1.08333333, 0, 1.08333333],
+                           [1.08333333, 0, 0]], dtype=np.float32)
 
 # The vector matrices which are drawn to fit the plane of the face we are finding
 axis = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).reshape(-1, 3)
@@ -28,10 +28,19 @@ def create_kernel(size):
 
 
 def drawPnPAxes(img, corners, imgpts):
-    corner = tuple(corners[0].ravel())
-    img = cv2.line(img, corner, tuple(imgpts[0].ravel()), (255, 0, 0), 5)
-    img = cv2.line(img, corner, tuple(imgpts[1].ravel()), (0, 255, 0), 5)
-    img = cv2.line(img, corner, tuple(imgpts[2].ravel()), (0, 0, 255), 5)
+    try:
+        corner = tuple(corners[0].ravel())
+        img = cv2.line(img, corner, tuple(imgpts[0].ravel()), (255, 0, 0), 5)
+        img = cv2.line(img, corner, tuple(imgpts[1].ravel()), (0, 255, 0), 5)
+        img = cv2.line(img, corner, tuple(imgpts[2].ravel()), (0, 0, 255), 5)
+    except Exception, e:
+        #raise
+
+        pass
+    else:
+        pass
+    finally:
+        pass
     return img
 
 
@@ -49,25 +58,26 @@ def findHeight(left, top, right):
     height = a * np.sin(theta)
     return height
 
-
 def connect(img, pts):
     for i, pt in enumerate(pts):
         if i < len(pts) - 1:
             print(pt.ravel())
-            img = cv2.line(img, tuple(pt.ravel()), tuple(pts[i + 1].ravel()), (255, 0, 0), 5)
+            img = cv2.line(img, tuple(pt.ravel()), tuple(pts[i+1].ravel()), (255, 0, 0), 5)
         else:
             img = cv2.line(img, tuple(pt.ravel()), tuple(pts[0].ravel()), (255, 0, 0), 5)
     return img
 
-
-cap = cv2.VideoCapture(0)
-lowerBound = np.array([10, 133, 60])
-upperBound = np.array([255, 255, 255])
+def text(img, string, pt, clr):
+    img = cv2.putText(img, string, pt, cv2.FONT_HERSHEY_COMPLEX_SMALL, 2, clr, 1)
+    return img
+cap = cv2.VideoCapture(1)
+lowerBound = np.array([24, 34, 136])
+upperBound = np.array([39, 147, 255])
 
 if (len(sys.argv) > 1):
     if sys.argv[1] == '-m':
-        lowerBound = np.array([22, 41, 222])
-        upperBound = np.array([62, 198, 255])
+        lower_bound = np.array([26, 17, 231])
+        upper_bound = np.array([52, 101, 255])
 
 while (True):
     ret, img = cap.read()
@@ -100,39 +110,44 @@ while (True):
     box = cv2.boxPoints(minRect)
     box = np.int0(box)
     # cv2.drawContours(frame, [box], 0, (0, 0, 255), 2)
-    epsilon = 0.020 * cv2.arcLength(contour, True)
-    approx = cv2.approxPolyDP(contour, epsilon, True)
+    epsilon = 0.02*cv2.arcLength(contour,True)
+    approx = cv2.approxPolyDP(contour,epsilon,True)
     print(approx)
-    img = connect(img, approx)
+    img = connect(img,approx)
     hull = cv2.convexHull(contour)
     print(hull)
-    for hullPoint in approx:
+    for i, hullPoint in enumerate(approx):
         img = cv2.circle(img, tuple(hullPoint[0]), 4, (0, 0, 255), -1)
+        text(img, str(i+1), tuple(hullPoint[0]), (0,0,0))
+
     topPoint = tuple(contour[contour[:, :, 1].argmin()][0])
     rightPoint = tuple(contour[contour[:, :, 0].argmax()][0])
     leftPoint = tuple(contour[contour[:, :, 0].argmin()][0])
     botPoint = tuple(contour[contour[:, :, 1].argmax()][0])
 
-    # midHeight = findHeight(leftPoint, topPoint, rightPoint)
-    # midHeight = int(midHeight)
-    # print(midHeight)
-    # midPoint = tuple([botPoint[0], topPoint[1] + 2 * midHeight])
-    # frame = cv2.circle(frame, midPoint, 4, (0, 0, 255), -1)
-    points = np.asarray([leftPoint, topPoint, rightPoint, botPoint], dtype=np.float32)
+    midHeight = findHeight(leftPoint, topPoint, rightPoint)
+    midHeight = int(midHeight)
+    print(midHeight)
+    midPoint = tuple([botPoint[0], topPoint[1] + 2 * midHeight])
+    img = cv2.circle(img, midPoint, 4, (0, 0, 255), -1)
+    points = np.asarray([leftPoint, topPoint, rightPoint, midPoint], dtype=np.float32)
 
     points = np.reshape(points, (4, 2))
     objectPoints = np.reshape(objectPoints, (4, 3))
-
     ret2, rvecs, tvecs = cv2.solvePnP(objectPoints, points, camIntrinsics, distortCoeffs)
     imgpts, jac = cv2.projectPoints(axis, rvecs, tvecs, camIntrinsics, distortCoeffs)
     rmat = None
     rmat, jac2 = cv2.Rodrigues(rvecs, rmat)
 
-    sy = np.sqrt(rmat[0, 0] * rmat[0, 0] + rmat[1, 0] * rmat[1, 0])
-    eulerY = np.arctan2(-rmat[2, 0], sy)
+    print(tvecs)
+    distance = np.sqrt(tvecs[0].ravel() ** 2 + tvecs[1].ravel() ** 2 + tvecs[2].ravel() ** 2)
+    text(img, "distance: %.2f ft." % (distance), (100, 100), (0,0,0))
+
+    sy = np.sqrt(rmat[0,0] * rmat[0,0] +  rmat[1,0] * rmat[1,0])
+    eulerY = np.arctan2(-rmat[2,0], sy)
     print(eulerY)
 
-    # source = drawPnPAxes(source, points, imgpts)
+    source = drawPnPAxes(source, points, imgpts)
     cv2.imshow("frame2", source)
     cv2.imshow("compound", compound)
     k = cv2.waitKey(5)
