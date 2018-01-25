@@ -1,22 +1,50 @@
-import os
 import sys
 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+from random import *
 
 # Blue contours are the largest contours within the limit set in the code
 # Red contours are the contours with the highest extent ratio
 # Green are the contours out of the largest who are the most full/solid
-DEBUG_LARGEST = True
-DEBUG_EXTENT = True
-DEBUG_SOLID = True
-DEBUG_MAIN = True
+DEBUGGING = False
+DEBUG_LARGEST = False
+DEBUG_EXTENT = False
+DEBUG_SOLIDITY = False
+DEBUG_SCORE = True
 DEBUG_DISTANCE = False
+
+os.system("v4l2-ctl -d /dev/video1"
+          " -c brightness={}".format(175 + randint(-5, 5)) +
+          " -c contrast=5"
+          " -c saturation=83"
+          " -c white_balance_temperature_auto=false"
+          " -c sharpness=4500"
+          " -c backlight_compensation=0"
+          " -c exposure_auto=1"
+          " -c exposure_absolute=0"
+          " -c pan_absolute=0"
+          " -c tilt_absolute=0"
+          " -c zoom_absolute=0")
+
+
+class CScore:
+
+    def __init__(self, contour, size, extent, solidity):
+        self.contour = contour
+        self.size = size
+        self.extent = extent
+        self.solidity = solidity
+
+    def getScore(self):
+        return self.size + self.extent + self.solidity
+
 
 class PnPVision:
 
-    def __init__(self):
+    def __init__(self, imgWidth, imgHeight, fov):
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
         self.camIntrinsics = np.asarray([[879.4009463329488, 0.0, 341.3659246478685],
@@ -39,81 +67,77 @@ class PnPVision:
         # The vector matrices which are drawn to fit the plane of the face we are finding
         self.axis = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).reshape(-1, 3)
 
-        # os.system("v4l2-ctl -d /dev/video0
-        # -c exposure_auto=1
-        # -c white_balance_temperature_auto=0
-        # -c brightness=0
-        # -c exposure_absolute=20")
         self.lowerBound = np.array([10, 133, 60])
         self.upperBound = np.array([180, 255, 255])
 
-        self.n = 0
+        self.degreesPerPix = fov / (np.sqrt(imgWidth ** 2 + imgHeight ** 2))
+
+        # Counter for x axis of scatter graph of DEBUG_DISTANCE function
+        self.distances = []
+        self.xAxis = []
+        self.windowsMoved = False
 
     def processImg(self, img):
         self.source = img
-        xAxis = []
-        yAxis = []
 
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, lowerb=self.lowerBound, upperb=self.upperBound)
         erode = cv2.erode(mask, kernel=self.createKernel(5))
         dilate = cv2.dilate(erode, kernel=self.createKernel(5))
         close = cv2.morphologyEx(dilate, cv2.MORPH_CLOSE, self.createKernel(7))
+        erode2 = cv2.dilate(close, kernel=self.createKernel(3))
+        close2 = cv2.morphologyEx(erode2, cv2.MORPH_CLOSE, self.createKernel(10))
 
-        fstream, contours, hierarchy = cv2.findContours(close, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_SIMPLE)
+        fstream, contours, hierarchy = cv2.findContours(close2, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_SIMPLE)
 
         if len(contours) > 0:
-            largest = self.filterSize(contours, num=5)
-            highestExtent = self.filterExtent(largest, minPercent=50)
-            mostSolid = self.filterFullness(highestExtent, minPercent=80)
+            notableContours = self.filterContours(contours, num=10)
 
-            for c in mostSolid:
-                try:
-                    cMoments = cv2.moments(c)
-                    centerPoint = (int((cMoments["m10"] / cMoments['m00'])),
-                                   int((cMoments["m01"] / cMoments["m00"])))
-                    cv2.circle(img, tuple(centerPoint), 4, (255, 255, 255), -1)
+            if len(notableContours) > 0:
+                scores = []
+                for i, cs in enumerate(notableContours):
+                    scores.append(cs.getScore())
 
-                    minRect = cv2.minAreaRect(c)
-                    box = cv2.boxPoints(minRect)
-                    box = np.int0(box)
-                    cv2.drawContours(img, [box], 0, (140, 110, 255), 2)
+                sortedScores = sorted(zip(scores, notableContours), key=lambda l: l[0], reverse=True)
+                print(sortedScores)
 
-                    distance = self.calcRealDistance(minRect[1][0]) * 2
+                if (sortedScores[0][0] > 2.75):
+                    bestCScore = sortedScores[0][1]
 
-                    if (DEBUG_MAIN):
-                        # Light green is adjacent to pink and red
-                        # Light Green
-                        cv2.circle(img, tuple(box[0]), 4, (3, 188, 76), -1)
-                        # Red
-                        cv2.circle(img, tuple(box[1]), 4, (8, 22, 240), -1)
-                        # Yellow
-                        cv2.circle(img, tuple(box[2]), 4, (92, 240, 255), -1)
-                        # Pink
-                        cv2.circle(img, tuple(box[3]), 4, (137, 112, 255), -1)
+                    try:
+                        cMoments = cv2.moments(bestCScore.contour)
+                        centerPoint = (int((cMoments["m10"] / cMoments['m00'])),
+                                       int((cMoments["m01"] / cMoments["m00"])))
 
-                    if (DEBUG_DISTANCE):
-                        xAxis.append(self.n)
-                        yAxis.append(distance)
+                        cv2.circle(img, tuple(centerPoint), 4, (255, 255, 255), -1)
 
-                        axes = plt.gca()
-                        axes.set_ylim([0, 500])
+                        minRect = cv2.minAreaRect(bestCScore.contour)
+                        box = cv2.boxPoints(minRect)
+                        box = np.int0(box)
+                        cv2.drawContours(img, [box], 0, (140, 110, 255), 2)
 
-                        plt.scatter(xAxis, yAxis)
+                        distance = self.calcRealDistance(minRect[1][0]) * 2
+                        angle = self.calcAngle(centerPoint[0])
 
-                        plt.pause(0.01)
-                        self.n += 1
+                        self.distances.append(distance)
+                        self.xAxis.append(len(self.distances))
 
-                    cv2.putText(img, "{}".format(distance), (centerPoint[0], centerPoint[1] + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (268, 52, 67), 2, cv2.LINE_AA)
+                        cv2.putText(img, "{}".format(distance), (centerPoint[0], centerPoint[1] + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (268, 52, 67), 2, cv2.LINE_AA)
+                        cv2.putText(img, "{}".format(angle), (centerPoint[0], centerPoint[1] + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (125, 52, 67), 2, cv2.LINE_AA)
 
-                except ZeroDivisionError:
-                    pass
+                    except ZeroDivisionError:
+                        pass
 
-        cv2.imshow("Source", img)
-        cv2.imshow("Color Filtered", close)
-        cv2.moveWindow("Color Filtered", 75, 550)
+                if (DEBUGGING):
+                    self.showDebugStatements(notableContours)
 
-        self.source = img
+        cv2.imshow("Source", self.source)
+        cv2.imshow("Color Filtered", close2)
+
+        if (not self.windowsMoved):
+            cv2.moveWindow("Source", 75, 0)
+            cv2.moveWindow("Color Filtered", 75, 550)
+            self.windowsMoved = True
 
     def createKernel(self, size):
         return np.ones((size, size), np.uint8)
@@ -138,106 +162,91 @@ class PnPVision:
         img = cv2.line(img, corner, tuple(imgPts[2].ravel()), (0, 0, 255), 5)
         return img
 
-    # Returns the largest {num} contours on the screen
-    def filterSize(self, contours, num):
+    # Filters out contours based on 3 parameters:
+    #   Size of the contour
+    #       Anything with an area less than 1000 pixels is ignored. The {num} largest contours are then put away into a scoring object
+    #   Extent of contour
+    #   Solidity of contour
+    def filterContours(self, contours, num):
         cAreas = []
-        largest = []
-        n = 0
+        scores = []
 
         for i, c in enumerate(contours):
             cAreas.append(cv2.contourArea(c))
 
         sortedAreas = sorted(zip(cAreas, contours), key=lambda l: l[0], reverse=True)
+        largestArea = sortedAreas[0][0]
 
         for i in range(len(sortedAreas)):
 
             if (sortedAreas[i][0] > 1000):
-                largest.append(sortedAreas[i][1])
+                area = cv2.contourArea(sortedAreas[i][1])
 
-            if (len(largest) >= num):
+                x, y, w, h = cv2.boundingRect(sortedAreas[i][1])
+                rectArea = w * h
+                extent = (float(area) / rectArea)
+
+                hull = cv2.convexHull(sortedAreas[i][1])
+                hullArea = cv2.contourArea(hull)
+                solidity = (float(area) / hullArea)
+
+                relativeArea = sortedAreas[i][0] / largestArea
+
+                cScore = CScore(sortedAreas[i][1], relativeArea, extent, solidity)
+                scores.append(cScore)
+
+            if (len(scores) >= num):
                 break
 
-        if (DEBUG_LARGEST):
-            largestImg = self.source
-            for c in largest:
-                try:
-                    cMoments = cv2.moments(c)
-                    centerPoint = (int((cMoments["m10"] / cMoments['m00'])),
-                                   int((cMoments["m01"] / cMoments["m00"])))
-                except ZeroDivisionError:
-                    pass
-
-                cv2.drawContours(largestImg, c, -1, (255, 0, 0), 2)
-                cv2.putText(largestImg, "{}".format(n), tuple(centerPoint), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
-                n += 1
-
-        return largest
-
-    def filterExtent(self, contours, minPercent):
-        mostRect = []
-        n = 0
-
-        for c in contours:
-            area = cv2.contourArea(c)
-            x, y, w, h = cv2.boundingRect(c)
-            rectArea = w * h
-            extent = (float(area) / rectArea) * 100
-
-            if extent >= minPercent:
-                mostRect.append(c)
-
-            if (DEBUG_EXTENT):
-                extentImg = self.source
-
-                try:
-                    cMoments = cv2.moments(c)
-                    centerPoint = (int((cMoments["m10"] / cMoments['m00'])),
-                                   int((cMoments["m01"] / cMoments["m00"])))
-                except ZeroDivisionError:
-                    pass
-
-                cv2.drawContours(extentImg, c, -1, (0, 0, 255), 2)
-                cv2.putText(extentImg, "{}".format(n), (centerPoint[0], centerPoint[1] - 35), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
-                cv2.putText(extentImg, "{}".format(int(extent)), (centerPoint[0] + 25, centerPoint[1] - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2, cv2.LINE_AA)
-
-                n += 1
-
-        return mostRect
-
-    def filterFullness(self, contours, minPercent):
-        solidContours = []
-        n = 0
-
-        for c in contours:
-            cArea = cv2.contourArea(c)
-            hull = cv2.convexHull(c)
-            hullArea = cv2.contourArea(hull)
-
-            solidity = (float(cArea) / hullArea) * 100
-
-            if solidity >= minPercent:
-                solidContours.append(c)
-
-            if (DEBUG_SOLID):
-                fullnessImg = self.source
-
-                try:
-                    cMoments = cv2.moments(c)
-                    centerPoint = (int((cMoments["m10"] / cMoments['m00'])),
-                                   int((cMoments["m01"] / cMoments["m00"])))
-                except ZeroDivisionError:
-                    pass
-
-                cv2.drawContours(fullnessImg, c, -1, (0, 255, 0), 2)
-                cv2.putText(fullnessImg, "{}".format(n), (centerPoint[0], centerPoint[1] - 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-                cv2.putText(fullnessImg, "{}".format(int(solidity)), (centerPoint[0] + 25, centerPoint[1] - 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2, cv2.LINE_AA)
-
-                n += 1
-
-        return solidContours
+        return scores
 
     def calcRealDistance(self, pxWidth):
         return (self.cubeWidthReal * self.focalLength) / pxWidth
+
+    def calcAngle(self, centerX):
+        return self.degreesPerPix * centerX
+
+    def showDebugStatements(self, scores):
+        l = 0
+        e = 0
+        s = 0
+        sc = 0
+
+        for score in scores:
+            try:
+                cMoments = cv2.moments(score.contour)
+                centerPoint = (int((cMoments["m10"] / cMoments['m00'])),
+                               int((cMoments["m01"] / cMoments["m00"])))
+            except ZeroDivisionError:
+                pass
+
+            if (DEBUG_LARGEST):
+                cv2.drawContours(self.source, score.contour, -1, (255, 0, 0), 2)
+                cv2.putText(self.source, "{}".format(l), tuple(centerPoint), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
+                cv2.putText(self.source, "{}".format(score.size), (centerPoint[0] + 25, centerPoint[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2, cv2.LINE_AA)
+                l += 1
+
+            if (DEBUG_EXTENT):
+                cv2.drawContours(self.source, score.contour, -1, (0, 0, 255), 2)
+                cv2.putText(self.source, "{}".format(e), (centerPoint[0], centerPoint[1] - 35), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                cv2.putText(self.source, "{}".format(score.extent), (centerPoint[0] + 25, centerPoint[1] - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2, cv2.LINE_AA)
+                e += 1
+
+            if (DEBUG_SOLIDITY):
+                cv2.drawContours(self.source, score.contour, -1, (0, 255, 0), 2)
+                cv2.putText(self.source, "{}".format(s), (centerPoint[0], centerPoint[1] - 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+                cv2.putText(self.source, "{}".format(score.solidity), (centerPoint[0] + 25, centerPoint[1] - 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2, cv2.LINE_AA)
+                s += 1
+
+            if (DEBUG_SCORE):
+                cv2.drawContours(self.source, score.contour, -1, (255, 255, 255), 2)
+                cv2.putText(self.source, "{}".format(sc), (centerPoint[0], centerPoint[1] - 105), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.putText(self.source, "{}".format(score.getScore()), (centerPoint[0] + 25, centerPoint[1] - 105), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+                sc += 1
+
+            if (DEBUG_DISTANCE):
+                plt.scatter(self.xAxis, self.distances)
+                plt.pause(float(1) / 30)
 
     def getSourceImg(self):
         return self.source
@@ -245,7 +254,7 @@ class PnPVision:
 
 if __name__ == '__main__':
 
-    for x in range(0, 5):
+    for x in range(1, 5):
         stream = cv2.VideoCapture(x)
 
         if (stream.isOpened()):
@@ -256,12 +265,15 @@ if __name__ == '__main__':
         print("Camera not found")
         sys.exit()
 
-    vision = PnPVision()
+    # Lifecam is 60 degrees from left to right. Pass it only half of fov
+    vision = PnPVision(stream.get(cv2.CAP_PROP_FRAME_WIDTH), stream.get(cv2.CAP_PROP_FRAME_HEIGHT), 30)
 
     while True:
         ret, src = stream.read()
 
         plt.ion()
+        axes = plt.gca()
+        axes.set_ylim([0, 500])
 
         if (ret):
 
