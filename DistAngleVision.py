@@ -42,7 +42,7 @@ class CScore:
         return self.size + self.extent + self.solidity
 
 
-class PnPVision:
+class DistAngleVision:
 
     def __init__(self, imgWidth, imgHeight, fov):
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
@@ -99,9 +99,8 @@ class PnPVision:
                     scores.append(cs.getScore())
 
                 sortedScores = sorted(zip(scores, notableContours), key=lambda l: l[0], reverse=True)
-                print(sortedScores)
 
-                if (sortedScores[0][0] > 2.75):
+                if (sortedScores[0][0] > 2.5):
                     bestCScore = sortedScores[0][1]
 
                     try:
@@ -123,7 +122,7 @@ class PnPVision:
                         self.xAxis.append(len(self.distances))
 
                         cv2.putText(img, "{}".format(distance), (centerPoint[0], centerPoint[1] + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (268, 52, 67), 2, cv2.LINE_AA)
-                        cv2.putText(img, "{}".format(angle), (centerPoint[0], centerPoint[1] + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (125, 52, 67), 2, cv2.LINE_AA)
+                        cv2.putText(img, "{}".format(angle), (centerPoint[0], centerPoint[1] + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (125, 52, 150), 2, cv2.LINE_AA)
 
                     except ZeroDivisionError:
                         pass
@@ -266,7 +265,7 @@ if __name__ == '__main__':
         sys.exit()
 
     # Lifecam is 60 degrees from left to right. Pass it only half of fov
-    vision = PnPVision(stream.get(cv2.CAP_PROP_FRAME_WIDTH), stream.get(cv2.CAP_PROP_FRAME_HEIGHT), 30)
+    vision = DistAngleVision(stream.get(cv2.CAP_PROP_FRAME_WIDTH), stream.get(cv2.CAP_PROP_FRAME_HEIGHT), 30)
 
     while True:
         ret, src = stream.read()
