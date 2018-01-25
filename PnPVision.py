@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import sys
 import os
+from enum import Enum
 from random import *
 
 os.system("v4l2-ctl -d /dev/video1"
@@ -34,8 +35,12 @@ objectPoints = np.asarray([[0, 0, 0],
 # The vector matrices which are drawn to fit the plane of the face we are finding
 axis = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).reshape(-1, 3)
 
-headOnThresh = 50
+class Direction(Enum):
+    RIGHT = 0
+    LEFT = 1
 
+headOnThresh = 25
+slightlyHeadonThresh = 10
 
 def create_kernel(size):
     return np.ones((size, size), np.uint8)
@@ -48,7 +53,7 @@ def drawPnPAxes(img, corners, imgpts):
         img = cv2.line(img, corner, tuple(imgpts[1].ravel()), (0, 255, 0), 5)
         img = cv2.line(img, corner, tuple(imgpts[2].ravel()), (0, 0, 255), 5)
     except Exception as e:
-        # raise
+        #raise
 
         pass
     else:
@@ -72,7 +77,6 @@ def findHeight(left, top, right):
     height = a * np.sin(theta)
     return height
 
-
 def connect(img, pts):
     for i, pt in enumerate(pts):
         if i < len(pts) - 1:
@@ -81,18 +85,16 @@ def connect(img, pts):
             img = cv2.line(img, tuple(pt.ravel()), tuple(pts[0].ravel()), (255, 0, 0), 5)
     return img
 
-
 def text(img, string, pt, clr):
     img = cv2.putText(img, string, pt, cv2.FONT_HERSHEY_COMPLEX_SMALL, 2, clr, 1)
     return img
 
-
 def sortByColumn(arr, column=0, flipped=False):
     if flipped:
-        return arr[np.flip(np.argsort(arr[:, 0, column]), 0)]
+        return arr[np.flip(np.argsort(arr[:,0,column]),0)]
     else:
-        return arr[np.argsort(arr[:, 0, column])]
-
+        return arr[np.argsort(arr[:,0,column])]
+    
 
 cap = cv2.VideoCapture(1)
 lowerBound = np.array([10, 133, 60])
@@ -100,8 +102,8 @@ upperBound = np.array([180, 255, 255])
 
 if (len(sys.argv) > 1):
     if sys.argv[1] == '-m':
-        lower_bound = np.array([26, 17, 231])
-        upper_bound = np.array([52, 101, 255])
+        lower_bound = np.array([22, 25, 210])
+        upper_bound = np.array([41, 132, 255])
 
 while (True):
     ret, img = cap.read()
@@ -109,7 +111,6 @@ while (True):
 
     hsv = cv2.cvtColor(source, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(hsv, lowerBound, upperBound)
-
     erode = cv2.erode(mask, create_kernel(5))
     dilate = cv2.dilate(erode, create_kernel(5))
     closed = cv2.morphologyEx(dilate, cv2.MORPH_CLOSE, create_kernel(7))
@@ -156,8 +157,9 @@ while (True):
     midPoint = tuple([botPoint[0], topPoint[1] + 2 * midHeight])
 
     facingHeadon = False
-
-    if len(approx) < 6 and len(approx) > 1:
+    slightlyHeadon = False
+    slightlyHeadonDirection = Direction.LEFT
+    if len(approx) <= 4 and len(approx) > 1:
         # for i, pt1 in enumerate(approx):
         #     point1 = pt1.ravel()
         #     for j, pt2 in enumerate(approx):
@@ -167,6 +169,10 @@ while (True):
         sortedArr = sortByColumn(approx, column=1, flipped=False)
         if abs(sortedArr[0].ravel()[1] - sortedArr[1].ravel()[1]) < headOnThresh:
             facingHeadon = True
+    elif len(approx) == 5:
+        sortedArr = sortByColumn(approx, column=1, flipped=True)
+        if abs(sortedArr[0].ravel()[1] - sortedArr[1].ravel()[1]) > headOnThresh :
+            slightlyHeadon = True
 
     if facingHeadon:
         sortedTop = sortByColumn(approx, column=1, flipped=False)[:2]
@@ -179,7 +185,31 @@ while (True):
         img = cv2.circle(img, midPoint, 4, (0, 255, 0), -1)
         img = cv2.circle(img, leftPoint, 4, (0, 0, 0), -1)
         img = cv2.circle(img, rightPoint, 4, (255, 255, 255), -1)
+    
+    elif slightlyHeadon:
+        sortedTop = sortByColumn(approx, column=1, flipped=True)
+        sortedLeftTop = sortByColumn(sortedTop[:2], column=0)
 
+        mid = sortedTop[3].ravel()
+        if abs(mid[0] - sortedLeftTop[0].ravel()[0]) < slightlyHeadonThresh:
+            slightlyHeadonDirection = Direction.LEFT
+            midPoint = leftPoint
+            leftPoint = tuple(sortedLeftTop[0].ravel())
+            topPoint = tuple(sortedLeftTop[1].ravel())
+        elif abs(mid[0] - sortedLeftTop[0].ravel()[1]) < slightlyHeadonThresh:
+            slightlyHeadonDirection = Direction.RIGHT
+            leftPoint = tuple(sortedLeftTop[0].ravel())
+            topPoint = tuple(sortedLeftTop[1].ravel())            
+            midPoint = tuple([rightPoint[0], sortedLeftTop[0].ravel()[1]])
+
+
+
+
+
+
+
+
+    img = cv2.circle(img, midPoint, 4, (0, 0, 255), -1)
     # img = cv2.circle(img, midPoint, 4, (0, 0, 255), -1)
     points = np.asarray([leftPoint, topPoint, rightPoint, midPoint], dtype=np.float32)
 
@@ -200,7 +230,7 @@ while (True):
 
     source = drawPnPAxes(source, points, imgpts)
     cv2.imshow("frame2", source)
-    cv2.imshow("compound", compound)
+    cv2.imshow("compound", mask)
     k = cv2.waitKey(5)
     if k == 27:
         break
