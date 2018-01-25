@@ -22,6 +22,7 @@ objectPoints = np.asarray([[0, 0, 0],
 # The vector matrices which are drawn to fit the plane of the face we are finding
 axis = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).reshape(-1, 3)
 
+headOnThresh = 10
 
 def create_kernel(size):
     return np.ones((size, size), np.uint8)
@@ -61,7 +62,6 @@ def findHeight(left, top, right):
 def connect(img, pts):
     for i, pt in enumerate(pts):
         if i < len(pts) - 1:
-            print(pt.ravel())
             img = cv2.line(img, tuple(pt.ravel()), tuple(pts[i+1].ravel()), (255, 0, 0), 5)
         else:
             img = cv2.line(img, tuple(pt.ravel()), tuple(pts[0].ravel()), (255, 0, 0), 5)
@@ -70,6 +70,14 @@ def connect(img, pts):
 def text(img, string, pt, clr):
     img = cv2.putText(img, string, pt, cv2.FONT_HERSHEY_COMPLEX_SMALL, 2, clr, 1)
     return img
+
+def sortByColumn(arr, column=0, flipped=False):
+    if flipped:
+        return arr[np.flip(np.argsort(arr[:,0,column]),0)]
+    else:
+        return arr[np.argsort(arr[:,0,column])]
+    
+
 cap = cv2.VideoCapture(1)
 lowerBound = np.array([24, 34, 136])
 upperBound = np.array([39, 147, 255])
@@ -114,11 +122,12 @@ while (True):
     approx = cv2.approxPolyDP(contour,epsilon,True)
     print(approx)
     img = connect(img,approx)
-    hull = cv2.convexHull(contour)
-    print(hull)
-    for i, hullPoint in enumerate(approx):
-        img = cv2.circle(img, tuple(hullPoint[0]), 4, (0, 0, 255), -1)
-        text(img, str(i+1), tuple(hullPoint[0]), (0,0,0))
+    for i, approxPoint in enumerate(approx):
+        img = cv2.circle(img, tuple(approxPoint[0]), 4, (0, 0, 255), -1)
+        text(img, str(i+1), tuple(approxPoint[0]), (0,0,0))
+
+
+    
 
     topPoint = tuple(contour[contour[:, :, 1].argmin()][0])
     rightPoint = tuple(contour[contour[:, :, 0].argmax()][0])
@@ -127,7 +136,35 @@ while (True):
 
     midHeight = findHeight(leftPoint, topPoint, rightPoint)
     midHeight = int(midHeight)
-    print(midHeight)
+    # print(midHeight)
+
+    facingHeadon = False
+
+    if len(approx) < 6 and len(approx) > 1:
+        # for i, pt1 in enumerate(approx):
+        #     point1 = pt1.ravel()
+        #     for j, pt2 in enumerate(approx):
+        #         point2 = pt2.ravel()
+        #         if abs(point2[1] - point1[1]) < headOnThresh:
+        #             facingHeadon = True
+        sortedArr = sortByColumn(approx, column=1, flipped=True)
+        if abs(sortedArr[0].ravel()[1] - sortedArr[1].ravel()[1]) > headOnThresh :
+            facingHeadon = True
+
+
+
+    if facingHeadon:
+        sortedTop = sortByColumn(approx, column=1, flipped=True)[:2]
+        sortedLeftTop = sortByColumn(sortedTop, column=0)
+
+        midPoint = leftPoint
+        leftPoint = tuple(sortedLeftTop[0].ravel())
+        topPoint = tuple(sortedLeftTop[1].ravel())
+
+
+
+
+
     midPoint = tuple([botPoint[0], topPoint[1] + 2 * midHeight])
     img = cv2.circle(img, midPoint, 4, (0, 0, 255), -1)
     points = np.asarray([leftPoint, topPoint, rightPoint, midPoint], dtype=np.float32)
@@ -139,13 +176,13 @@ while (True):
     rmat = None
     rmat, jac2 = cv2.Rodrigues(rvecs, rmat)
 
-    print(tvecs)
+    # print(tvecs)
     distance = np.sqrt(tvecs[0].ravel() ** 2 + tvecs[1].ravel() ** 2 + tvecs[2].ravel() ** 2)
     text(img, "distance: %.2f ft." % (distance), (100, 100), (0,0,0))
 
     sy = np.sqrt(rmat[0,0] * rmat[0,0] +  rmat[1,0] * rmat[1,0])
     eulerY = np.arctan2(-rmat[2,0], sy)
-    print(eulerY)
+    # print(eulerY)
 
     source = drawPnPAxes(source, points, imgpts)
     cv2.imshow("frame2", source)
