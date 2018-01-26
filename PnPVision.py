@@ -6,17 +6,9 @@ from enum import Enum
 from random import *
 
 os.system("v4l2-ctl -d /dev/video1"
-          " -c brightness={}".format(175 + randint(-5, 5)) +
-          " -c contrast=5"
-          " -c saturation=83"
+          " -c brightness={}".format(10 + randint(-5, 5)) +
           " -c white_balance_temperature_auto=false"
-          " -c sharpness=4500"
-          " -c backlight_compensation=0"
-          " -c exposure_auto=1"
-          " -c exposure_absolute=10"
-          " -c pan_absolute=0"
-          " -c tilt_absolute=0"
-          " -c zoom_absolute=0")
+          " -c exposure_auto=1")
 
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
