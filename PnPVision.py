@@ -39,8 +39,8 @@ class Direction(Enum):
     RIGHT = 0
     LEFT = 1
 
-headOnThresh = 25
-slightlyHeadonThresh = 10
+headOnThresh = 200
+slightlyHeadonThresh = 100
 
 def create_kernel(size):
     return np.ones((size, size), np.uint8)
@@ -80,9 +80,9 @@ def findHeight(left, top, right):
 def connect(img, pts):
     for i, pt in enumerate(pts):
         if i < len(pts) - 1:
-            img = cv2.line(img, tuple(pt.ravel()), tuple(pts[i + 1].ravel()), (255, 0, 0), 5)
+            img = cv2.line(img, tuple(pt.ravel()), tuple(pts[i + 1].ravel()), (0, 0, 0), 5)
         else:
-            img = cv2.line(img, tuple(pt.ravel()), tuple(pts[0].ravel()), (255, 0, 0), 5)
+            img = cv2.line(img, tuple(pt.ravel()), tuple(pts[0].ravel()), (0, 0, 0), 5)
     return img
 
 def text(img, string, pt, clr):
@@ -95,18 +95,31 @@ def sortByColumn(arr, column=0, flipped=False):
     else:
         return arr[np.argsort(arr[:,0,column])]
     
+def rotate90(frame):
+    frame = cv2.transpose(frame)
+    frame = cv2.flip(frame, 1)
+    return frame
 
 cap = cv2.VideoCapture(1)
+#cap = cv2.VideoCapture("/Users/alexanderwarren/Downloads/cubevid.MOV")
 lowerBound = np.array([10, 133, 60])
 upperBound = np.array([180, 255, 255])
 
 if (len(sys.argv) > 1):
     if sys.argv[1] == '-m':
-        lower_bound = np.array([22, 25, 210])
-        upper_bound = np.array([41, 132, 255])
-
+        lowerBound = np.array([18, 0, 194])
+        upperBound = np.array([42, 255, 255])
+#frame_counter = 0
 while (True):
     ret, img = cap.read()
+
+    #frame_counter += 1
+    #If the last frame is reached, reset the capture and the frame_counter
+    #if frame_counter == cap.get(cv2.CAP_PROP_FRAME_COUNT) - 10:
+    #    frame_counter = 0 #Or whatever as long as it is the same as next line
+    #    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    #img = rotate90(img)
     source = img
 
     hsv = cv2.cvtColor(source, cv2.COLOR_BGR2HSV)
@@ -143,8 +156,9 @@ while (True):
     print(len(approx))
     img = connect(img, approx)
     for i, approxPoint in enumerate(approx):
-        # img = cv2.circle(img, tuple(approxPoint[0]), 4, (0, 0, 255), -1)
+        img = cv2.circle(img, tuple(approxPoint[0]), 4, (0, 0, 255), -1)
         text(img, str(i + 1), tuple(approxPoint[0]), (0, 0, 0))
+        pass
 
     topPoint = tuple(contour[contour[:, :, 1].argmin()][0])
     rightPoint = tuple(contour[contour[:, :, 0].argmax()][0])
@@ -170,8 +184,8 @@ while (True):
         if abs(sortedArr[0].ravel()[1] - sortedArr[1].ravel()[1]) < headOnThresh:
             facingHeadon = True
     elif len(approx) == 5:
-        sortedArr = sortByColumn(approx, column=1, flipped=True)
-        if abs(sortedArr[0].ravel()[1] - sortedArr[1].ravel()[1]) > headOnThresh :
+        sortedArr = sortByColumn(approx, column=1, flipped=False)
+        if abs(sortedArr[0].ravel()[1] - sortedArr[1].ravel()[1]) < slightlyHeadonThresh :
             slightlyHeadon = True
 
     if facingHeadon:
@@ -181,36 +195,45 @@ while (True):
         midPoint = leftPoint
         leftPoint = tuple(sortedLeftTop[0].ravel())
         topPoint = tuple(sortedLeftTop[1].ravel())
-        img = cv2.circle(img, topPoint, 4, (0, 0, 255), -1)
-        img = cv2.circle(img, midPoint, 4, (0, 255, 0), -1)
-        img = cv2.circle(img, leftPoint, 4, (0, 0, 0), -1)
-        img = cv2.circle(img, rightPoint, 4, (255, 255, 255), -1)
+
     
     elif slightlyHeadon:
-        sortedTop = sortByColumn(approx, column=1, flipped=True)
+        sortedTop = sortByColumn(approx, column=1, flipped=False)
+        print(sortedTop)
         sortedLeftTop = sortByColumn(sortedTop[:2], column=0)
+        mid = sortedTop[2].ravel()
+        img = cv2.circle(img, tuple(sortedLeftTop[0].ravel()), 4, (223, 66, 224), -1)
+        img = cv2.circle(img, tuple(sortedLeftTop[1].ravel()), 4, (223, 66, 224), -1)
 
-        mid = sortedTop[3].ravel()
         if abs(mid[0] - sortedLeftTop[0].ravel()[0]) < slightlyHeadonThresh:
             slightlyHeadonDirection = Direction.LEFT
             midPoint = leftPoint
             leftPoint = tuple(sortedLeftTop[0].ravel())
             topPoint = tuple(sortedLeftTop[1].ravel())
-        elif abs(mid[0] - sortedLeftTop[0].ravel()[1]) < slightlyHeadonThresh:
+            rightPoint = tuple([midPoint[0], topPoint[1]])
+        elif abs(mid[0] - sortedLeftTop[1].ravel()[0]) < slightlyHeadonThresh:
             slightlyHeadonDirection = Direction.RIGHT
             leftPoint = tuple(sortedLeftTop[0].ravel())
             topPoint = tuple(sortedLeftTop[1].ravel())            
-            midPoint = tuple([rightPoint[0], sortedLeftTop[0].ravel()[1]])
+            midPoint = tuple([leftPoint[0], rightPoint[1]])
+
+
+    print(facingHeadon, slightlyHeadon)
+    if slightlyHeadon:
+        print(slightlyHeadonDirection.name)
+    img = cv2.circle(img, topPoint, 4, (0, 0, 255), -1)
+    text(img, "topPoint", tuple(topPoint), (0,0,0))
+    img = cv2.circle(img, midPoint, 4, (0, 255, 0), -1)
+    text(img, "midPoint", tuple(midPoint), (0,0,0))
+    img = cv2.circle(img, leftPoint, 4, (0, 0, 0), -1)
+    text(img, "leftPoint", tuple(leftPoint), (0,0,0))
+    img = cv2.circle(img, rightPoint, 4, (255, 255, 255), -1)
+    text(img, "rightPoint", tuple(rightPoint), (0,0,0))
 
 
 
-
-
-
-
-
+    
     img = cv2.circle(img, midPoint, 4, (0, 0, 255), -1)
-    # img = cv2.circle(img, midPoint, 4, (0, 0, 255), -1)
     points = np.asarray([leftPoint, topPoint, rightPoint, midPoint], dtype=np.float32)
 
     points = np.reshape(points, (4, 2))
@@ -219,18 +242,33 @@ while (True):
     imgpts, jac = cv2.projectPoints(axis, rvecs, tvecs, camIntrinsics, distortCoeffs)
     rmat = None
     rmat, jac2 = cv2.Rodrigues(rvecs, rmat)
+    #print(rmat.shape)
+    cmat = None
 
-    # print(tvecs)
+    projMat = np.array(
+        [[rmat[0][0], rmat[0][1], rmat[0][2], 0],
+         [rmat[1][0], rmat[1][1], rmat[1][2], 0],
+         [rmat[2][0], rmat[2][1], rmat[2][2], 0]
+        ])
+    tvecs1 = None
+    rmat1 = None
+    rotmatX = None
+    rotmatY = None
+    rotmatZ = None
+    eulerAngles = None
+    cameraMatrix, rotMatrix, transVect, rotMatrixX, rotMatrixY, rotMatrixZ, eulerAngles = cv2.decomposeProjectionMatrix(projMat, cmat, rmat1, tvecs1, rotmatX, rotmatY, rotmatZ, eulerAngles)
+    print(eulerAngles)
     distance = np.sqrt(tvecs[0].ravel() ** 2 + tvecs[1].ravel() ** 2 + tvecs[2].ravel() ** 2)
     text(img, "distance: %.2f ft." % (distance), (100, 100), (0, 0, 0))
 
     sy = np.sqrt(rmat[0, 0] * rmat[0, 0] + rmat[1, 0] * rmat[1, 0])
     eulerY = np.arctan2(-rmat[2, 0], sy)
-    # print(eulerY)
+    print((eulerY * (180/np.pi)) % 90)
+    res = cv2.bitwise_and(img,img, mask =close2)
 
     source = drawPnPAxes(source, points, imgpts)
     cv2.imshow("frame2", source)
-    cv2.imshow("compound", mask)
+    cv2.imshow("compound", res)
     k = cv2.waitKey(5)
     if k == 27:
         break
