@@ -10,24 +10,16 @@ from random import *
 # Red contours are the contours with the highest extent ratio
 # Green are the contours out of the largest who are the most full/solid
 DEBUGGING = False
-DEBUG_LARGEST = False
-DEBUG_EXTENT = False
-DEBUG_SOLIDITY = False
+DEBUG_LARGEST = True
+DEBUG_EXTENT = True
+DEBUG_SOLIDITY = True
 DEBUG_SCORE = True
 DEBUG_DISTANCE = False
 
 os.system("v4l2-ctl -d /dev/video1"
-          " -c brightness={}".format(175 + randint(-5, 5)) +
-          " -c contrast=5"
-          " -c saturation=83"
+          " -c brightness={}".format(10 + randint(-5, 5)) +
           " -c white_balance_temperature_auto=false"
-          " -c sharpness=4500"
-          " -c backlight_compensation=0"
-          " -c exposure_auto=1"
-          " -c exposure_absolute=0"
-          " -c pan_absolute=0"
-          " -c tilt_absolute=0"
-          " -c zoom_absolute=0")
+          " -c exposure_auto=1")
 
 
 class CScore:
@@ -141,31 +133,6 @@ class DistAngleVision:
     def createKernel(self, size):
         return np.ones((size, size), np.uint8)
 
-    def getCoordDist(self, p1, p2):
-        return np.sqrt((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2)
-
-    def getCoordHeight(self, pLeft, pTop, pRight):
-        a = self.getCoordDist(pTop, pRight)
-        b = self.getCoordDist(pLeft, pRight)
-        c = self.getCoordDist(pLeft, pTop)
-
-        theta = np.arccos((c ** 2 - a ** 2 - b ** 2) / (-2 * a * b))
-
-        height = a * np.sin(theta)
-        return height
-
-    def drawPnPAxes(self, img, corners, imgPts):
-        corner = tuple(corners[0].ravel())
-        img = cv2.line(img, corner, tuple(imgPts[0].ravel()), (255, 0, 0), 5)
-        img = cv2.line(img, corner, tuple(imgPts[1].ravel()), (0, 255, 0), 5)
-        img = cv2.line(img, corner, tuple(imgPts[2].ravel()), (0, 0, 255), 5)
-        return img
-
-    # Filters out contours based on 3 parameters:
-    #   Size of the contour
-    #       Anything with an area less than 1000 pixels is ignored. The {num} largest contours are then put away into a scoring object
-    #   Extent of contour
-    #   Solidity of contour
     def filterContours(self, contours, num):
         cAreas = []
         scores = []

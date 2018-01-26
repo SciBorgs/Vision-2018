@@ -32,7 +32,7 @@ class Direction(Enum):
     LEFT = 1
 
 headOnThresh = 200
-slightlyHeadonThresh = 100
+slightlyHeadonThresh = 50
 
 def create_kernel(size):
     return np.ones((size, size), np.uint8)
