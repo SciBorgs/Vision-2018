@@ -4,6 +4,7 @@ import numpy as np
 import threading
 import sys
 import os
+from random import randint
 
 
 class ColorFilterClass(wx.Frame):
@@ -11,23 +12,16 @@ class ColorFilterClass(wx.Frame):
     def __init__(self, *args, **kwargs):
         super(ColorFilterClass, self).__init__(*args, **kwargs)
 
-        os.system("v4l2-ctl -d /dev/video0 -c exposure_auto=1 -c white_balance_temperature_auto=0 -c brightness=0")
+        os.system("v4l2-ctl -d /dev/video1"
+                  " -c brightness={}".format(80 + randint(-5, 5)) +
+                  " -c white_balance_temperature_auto=false"
+                  " -c exposure_auto=1")
 
         self.initUI()
 
     def startVision(self):
 
-        # v4l2 - ctl - d / dev / video1 - c
-        # exposure_auto = 0 - c
-        # exposure_absolute = 0
-
-        # os.system("v4l2-ctl "
-        #           "-d /dev/video0 "
-        #           "-c exposure_auto=1 "
-        #           "-c exposure_absolute=10 "
-        #           "-c white_balance_temperature_auto=0")
-
-        for x in range(0, 5):
+        for x in range(1, 5):
             stream = cv2.VideoCapture(x)
 
             if (stream.isOpened()):
@@ -50,22 +44,15 @@ class ColorFilterClass(wx.Frame):
                 source = cv2.cvtColor(source, cv2.COLOR_BGR2HSV)
 
             mask = cv2.inRange(source, LOWER_LIMIT, UPPER_LIMIT)
-            # cv2.imshow("Mask", mask)
 
-            retval, threshold = cv2.threshold(mask, 255, 255, 255)
+            erode = cv2.erode(mask, kernel=self.createKernel(3))
+            dilate = cv2.dilate(erode, kernel=self.createKernel(3))
+            close = cv2.morphologyEx(dilate, cv2.MORPH_CLOSE, self.createKernel(15))
+            erode2 = cv2.dilate(close, kernel=self.createKernel(7))
 
-            kernel1 = np.ones((5, 5), np.uint8)
-            erode1 = cv2.erode(threshold, kernel1)
-            dilate = cv2.dilate(erode1, kernel1)
-            # kernel2 = np.ones((7, 7), np.uint8)
-            # erode2 = cv2.erode(dilate, kernel2)
+            cv2.imshow("Chain Morphs", erode2)
 
-            closeKernel = np.ones((5, 5), np.uint8)
-            closed = cv2.morphologyEx(dilate, cv2.MORPH_CLOSE, closeKernel)
-
-            cv2.imshow("Chain Morphs", closed)
-
-            fStream, validContours, hierarchy = cv2.findContours(closed.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_L1)
+            fStream, validContours, hierarchy = cv2.findContours(erode2.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_L1)
 
             for c in validContours:
 
@@ -264,6 +251,9 @@ class ColorFilterClass(wx.Frame):
             self.uSlider3Text.SetLabel("Upper Red")
 
             self.sliderOption = "BGR"
+
+    def createKernel(self, size):
+        return np.ones((size, size), np.uint8)
 
 
 if __name__ == "__main__":
