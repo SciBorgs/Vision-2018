@@ -4,6 +4,7 @@ import sys
 import os
 from enum import Enum
 from random import *
+from NetworkTableHandler import NetworkTableHandler
 
 os.system("v4l2-ctl -d /dev/video1"
           " -c brightness={}".format(0 + randint(-5, 5)) +
@@ -18,7 +19,7 @@ class Direction(Enum):
 
 class PnPVision:
 
-    def __init__(self, lbound, ubound):
+    def __init__(self, lbound, ubound, debug):
         self.criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
         self.camIntrinsics = np.asarray([[879.4009463329488, 0.0, 341.3659246478685],
@@ -46,27 +47,34 @@ class PnPVision:
         self.slightlyHeadonThresh = 50
         self.lowerBound = lbound
         self.upperBound = ubound
+        self.debug = debug
+
+
 
     # frame_counter = 0
-    def processImg(self, img):
+    def processImg(self, img, boxContour=None):
 
         self.source = img
+        self.modifiedImg = img
+        contours = None
+        if boxContour == None:
 
-        # Filtering
-        hsv = cv2.cvtColor(self.source, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, lowerBound, upperBound)
-        erode = cv2.erode(mask, self.createKernel(5))
-        dilate = cv2.dilate(erode, self.createKernel(5))
-        closed = cv2.morphologyEx(dilate, cv2.MORPH_CLOSE, self.createKernel(7))
-        erode2 = cv2.dilate(closed, self.createKernel(3))
-        close2 = cv2.morphologyEx(erode2, cv2.MORPH_CLOSE, self.createKernel(10))
+            # Filtering
+            hsv = cv2.cvtColor(self.source, cv2.COLOR_BGR2HSV)
+            mask = cv2.inRange(hsv, lowerBound, upperBound)
+            erode = cv2.erode(mask, self.createKernel(5))
+            dilate = cv2.dilate(erode, self.createKernel(5))
+            closed = cv2.morphologyEx(dilate, cv2.MORPH_CLOSE, self.createKernel(7))
+            erode2 = cv2.dilate(closed, self.createKernel(3))
+            close2 = cv2.morphologyEx(erode2, cv2.MORPH_CLOSE, self.createKernel(10))
 
-        # Combine original image and filtered mask
-        compound = cv2.bitwise_and(self.source, self.source, mask=closed)
-
-        # Contours
-        fstream, contours, hierarchy = cv2.findContours(closed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
+            # Combine original image and filtered mask
+            compound = cv2.bitwise_and(self.source, self.source, mask=closed)
+            self.compound = compound
+            # Contours
+            fstream, contours, hierarchy = cv2.findContours(closed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        else:
+            contours = [boxContour]
         if len(contours) > 0:
 
             cAreas = []
@@ -81,11 +89,8 @@ class PnPVision:
             epsilon = 0.03 * cv2.arcLength(largestContour, True)
             approx = cv2.approxPolyDP(largestContour, epsilon, True)
 
-            img = self.connectPoints(img, approx)
 
-            for i, approxPoint in enumerate(approx):
-                img = cv2.circle(img, tuple(approxPoint[0]), 4, (0, 0, 255), -1)
-                self.displayText(img, str(i + 1), tuple(approxPoint[0]), (0, 0, 0))
+
 
             # Assigning points initially - they stay these values if the cube is not head on or slightly head on
             topPoint = tuple(largestContour[largestContour[:, :, 1].argmin()][0])
@@ -133,8 +138,9 @@ class PnPVision:
                 sortedLeftTop = self.sortByColumn(sortedTop[:2], column=0)
                 mid = sortedTop[2].ravel()
 
-                img = cv2.circle(img, tuple(sortedLeftTop[0].ravel()), 4, (223, 66, 224), -1)
-                img = cv2.circle(img, tuple(sortedLeftTop[1].ravel()), 4, (223, 66, 224), -1)
+                if self.debug:
+                    img = cv2.circle(img, tuple(sortedLeftTop[0].ravel()), 4, (223, 66, 224), -1)
+                    img = cv2.circle(img, tuple(sortedLeftTop[1].ravel()), 4, (223, 66, 224), -1)
 
                 if abs(mid[0] - sortedLeftTop[0].ravel()[0]) < self.slightlyHeadonThresh:
                     slightlyHeadonDirection = Direction.LEFT
@@ -151,16 +157,7 @@ class PnPVision:
                     topPoint = tuple(sortedLeftTop[1].ravel())
                     midPoint = tuple([leftPoint[0], rightPoint[1]])
 
-            img = cv2.circle(img, topPoint, 4, (0, 0, 255), -1)
-            self.displayText(img, "topPoint", tuple(topPoint), (0, 0, 0))
-            img = cv2.circle(img, midPoint, 4, (0, 255, 0), -1)
-            self.displayText(img, "midPoint", tuple(midPoint), (0, 0, 0))
-            img = cv2.circle(img, leftPoint, 4, (0, 0, 0), -1)
-            self.displayText(img, "leftPoint", tuple(leftPoint), (0, 0, 0))
-            img = cv2.circle(img, rightPoint, 4, (255, 255, 255), -1)
-            self.displayText(img, "rightPoint", tuple(rightPoint), (0, 0, 0))
 
-            img = cv2.circle(img, midPoint, 4, (0, 0, 255), -1)
             points = np.asarray([leftPoint, topPoint, rightPoint, midPoint], dtype=np.float32)
 
             points = np.reshape(points, (4, 2))
@@ -184,15 +181,32 @@ class PnPVision:
 
             _, _, _, _, _, _, eulerAngles = cv2.decomposeProjectionMatrix(projMat, decompCamMat, decompRMat, decompTVec)
 
-            print(eulerAngles)
             distance = np.sqrt(transVectors[0].ravel() ** 2 + transVectors[1].ravel() ** 2 + transVectors[2].ravel() ** 2)
-            self.displayText(img, "distance: %.2f ft." % (distance), (100, 100), (0, 0, 0))
+            if self.debug:
+                self.modifiedImg = cv2.circle(self.modifiedImg, topPoint, 4, (0, 0, 255), -1)
+                self.displayText(self.modifiedImg, "topPoint", tuple(topPoint), (0, 0, 0))
+                self.modifiedImg = cv2.circle(self.modifiedImg, midPoint, 4, (0, 255, 0), -1)
+                self.displayText(self.modifiedImg, "midPoint", tuple(midPoint), (0, 0, 0))
+                self.modifiedImg = cv2.circle(self.modifiedImg, leftPoint, 4, (0, 0, 0), -1)
+                self.displayText(self.modifiedImg, "leftPoint", tuple(leftPoint), (0, 0, 0))
+                self.modifiedImg = cv2.circle(self.modifiedImg, rightPoint, 4, (255, 255, 255), -1)
+                self.displayText(self.modifiedImg, "rightPoint", tuple(rightPoint), (0, 0, 0))
+                for i, approxPoint in enumerate(approx):
+                    self.modifiedImg = cv2.circle(self.modifiedImg, tuple(approxPoint[0]), 4, (0, 0, 255), -1)
+                    self.displayText(self.modifiedImg, str(i + 1), tuple(approxPoint[0]), (0, 0, 0))
+                    self.modifiedImg = cv2.circle(self.modifiedImg, midPoint, 4, (0, 0, 255), -1)
+                self.displayText(self.modifiedImg, "distance: %.2f ft." % (distance), (100, 100), (0, 0, 0))
+                self.modifiedImg = self.drawPnPAxes(self.source, points, imgPts)
+                self.modifiedImg = self.connectPoints(self.modifiedImg, approx)
+                print(eulerAngles)
+
+
 
             # res = cv2.bitwise_and(img, img, mask=close2)
-            self.source = self.drawPnPAxes(self.source, points, imgPts)
 
-        cv2.imshow("frame2", self.source)
-        cv2.imshow("compound", compound)
+        # cv2.imshow("frame2", self.source)
+        # cv2.imshow("compound", compound)
+        #return self.modifiedImg, compound
 
     def createKernel(self, size):
         return np.ones((size, size), np.uint8)
@@ -267,7 +281,7 @@ if __name__ == "__main__":
             lowerBound = np.array([18, 0, 194])
             upperBound = np.array([42, 255, 255])
 
-    pnpVision = PnPVision(lowerBound, upperBound)
+    pnpVision = PnPVision(lowerBound, upperBound, False)
 
     while True:
         ret, src = stream.read()
@@ -275,6 +289,8 @@ if __name__ == "__main__":
         if ret:
             pnpVision.processImg(src)
 
+            cv2.imshow("frame2", pnpVision.source)
+            cv2.imshow("compound", pnpVision.compound)
             keyPressed = cv2.waitKey(33)
             if (keyPressed == ord("s")):
                 cv2.imwrite("{}.png".format("PnPVisionImg"), pnpVision.source)
