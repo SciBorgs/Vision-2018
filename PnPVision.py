@@ -123,7 +123,9 @@ class PnPVision:
             sortedTopLeftApprox = self.sortByColumn(sortedTopApprox[:3], column=0, flipped=False)
 
             # Finding the midPoint (the point of the corner of the box not on the edge of the contour)
+            print("mid")
             midHeight = self.findHeight(leftPoint, topPoint, rightPoint)
+
             midPoint = tuple([botPoint[0], topPoint[1] + 2 * midHeight])
 
             # Find if the cube is head on or slightly head on
@@ -189,7 +191,11 @@ class PnPVision:
 
                     leftPoint = tuple(sortedLeftTop[0].ravel())
                     topPoint = tuple(sortedLeftTop[1].ravel())
-                    rightPoint = tuple([midPoint[0], topPoint[1]])
+                    rightPoint = tuple([topPoint[0], midPoint[1]])
+                    # print("right")
+                    # rightPoint = self.findHeight(mid, leftPoint, topPoint)
+                    # self.modifiedImg = self.connectPoints(self.modifiedImg, [np.array(mid), np.array(leftPoint), np.array(topPoint)])
+                    # rightPoint = tuple([botPoint[0], leftPoint[1] + 2 * midHeight])
 
                 # elif abs(mid[0] - sortedLeftTop[1].ravel()[0]) < self.slightlyHeadonThresh:
                 if slightlyHeadonDirection == Direction.RIGHT:
@@ -246,7 +252,7 @@ class PnPVision:
                 self.displayText(self.modifiedImg, "distance: %.2f ft." % (self.distance), (100, 100), (0, 0, 0))
                 self.displayText(self.modifiedImg, "angle: %d deg." % (angles[1,0] % 90), (100, 400), (0, 255, 0))
                 self.modifiedImg = self.drawPnPAxes(self.source, points, imgPts)
-                self.modifiedImg = self.connectPoints(self.modifiedImg, approx)
+                #self.modifiedImg = self.connectPoints(self.modifiedImg, approx)
                 #print(eulerAngles)
                 self.source = self.modifiedImg
 
@@ -287,6 +293,7 @@ class PnPVision:
         theta = np.arccos((c ** 2 - a ** 2 - b ** 2) / (-2 * a * b))
 
         height = a * np.sin(theta)
+        print(int(height))
         return int(height)
 
     def connectPoints(self, img, pts):
@@ -355,7 +362,6 @@ if __name__ == "__main__":
     nt = NetworkTableHandler()
     while True:
         ret, src = stream.read()
-
         if ret:
             pnpVision.processImg(src)
             cv2.namedWindow("frame")
