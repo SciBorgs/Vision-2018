@@ -143,8 +143,9 @@ class PnPVision:
                 facingSlanted = True
                 leftPoint = tuple(sortedTopLeftApprox[0].ravel())
                 rightPoint = tuple(sortedTopLeftApprox[2].ravel())
-                self.source = cv2.circle(self.source, tuple(sortedTopLeftApprox[0].ravel()), 4, (223, 66, 224), -1)
-                self.source = cv2.circle(self.source, tuple(sortedTopLeftApprox[2].ravel()), 4, (223, 66, 224), -1)
+                if self.debug:
+                    self.source = cv2.circle(self.source, tuple(sortedTopLeftApprox[0].ravel()), 4, (223, 66, 224), -1)
+                    self.source = cv2.circle(self.source, tuple(sortedTopLeftApprox[2].ravel()), 4, (223, 66, 224), -1)
 
             elif 4 >= len(approx) > 1:
                 sortedArr = self.sortByColumn(approx, column=1, flipped=False)
@@ -202,7 +203,12 @@ class PnPVision:
 
                     leftPoint = tuple(sortedLeftTop[0].ravel())
                     topPoint = tuple(sortedLeftTop[1].ravel())
-                    midPoint = tuple([botPoint[0], rightPoint[1]])
+                    botLeft = self.sortByColumn(self.sortByColumn(approx, column=1, flipped=True)[:2], column=0, flipped=False)[0].ravel()
+                    if self.debug:
+                        print("botLeft: ")
+                        print(botLeft)
+                        self.modifiedImg = cv2.circle(self.modifiedImg, tuple(botLeft.ravel()), 10, (0, 0, 0), -1)
+                        midPoint = tuple([botLeft[0], rightPoint[1]])
                 
                 print(slightlyHeadonDirection.name)
 
@@ -252,7 +258,7 @@ class PnPVision:
                 self.displayText(self.modifiedImg, "distance: %.2f ft." % (self.distance), (100, 100), (0, 0, 0))
                 self.displayText(self.modifiedImg, "angle: %d deg." % (angles[1,0] % 90), (100, 400), (0, 255, 0))
                 self.modifiedImg = self.drawPnPAxes(self.source, points, imgPts)
-                #self.modifiedImg = self.connectPoints(self.modifiedImg, approx)
+                self.modifiedImg = self.connectPoints(self.modifiedImg, approx)
                 #print(eulerAngles)
                 self.source = self.modifiedImg
 
