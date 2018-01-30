@@ -7,16 +7,18 @@ from random import *
 
 # from NetworkTableHandler import NetworkTableHandler
 
-os.system("v4l2-ctl -d /dev/video1"
-          " -c brightness={}".format(175 + randint(-5, 5)) +
+os.system("v4l2-ctl -d /dev/video2"
+          " -c brightness={}".format(200 + randint(-5, 5)) +
           " -c white_balance_temperature_auto=false"
           " -c exposure_auto=1"
           " -c exposure_absolute=20")
 
 
 class Direction(Enum):
-    RIGHT = 0
+    # Direction of the point that is sticking out
+    NONE = 0
     LEFT = 1
+    RIGHT = 2
 
 
 class PnPVision:
@@ -43,13 +45,17 @@ class PnPVision:
                                         [1.08333333, 0, 0]], dtype=np.float32)
 
         # The vector matrices which are drawn to fit the plane of the face we are finding
-        self.axis = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).reshape(-1, 3)
+        self.axis = np.float32([[1.08333333, 0, 0], [0, 1.08333333, 0], [0, 0, 1.08333333]]).reshape(-1, 3)
 
         self.headOnThresh = 200
         self.slightlyHeadonThresh = 50
+        self.edgeThresh = 50
         self.lowerBound = lbound
         self.upperBound = ubound
         self.debug = debug
+
+        self.distance = None
+        self.angle = None
 
     # frame_counter = 0
     def processImg(self, img, boxContour=None):
@@ -88,26 +94,59 @@ class PnPVision:
             epsilon = 0.03 * cv2.arcLength(largestContour, True)
             approx = cv2.approxPolyDP(largestContour, epsilon, True)
 
+            M = cv2.moments(largestContour)
+
+            cx = int(M['m10'] / M['m00'])
+            cy = int(M['m01'] / M['m00'])
+            centroid = tuple([cx, cy])
+
             # Assigning points initially - they stay these values if the cube is not head on or slightly head on
             topPoint = tuple(largestContour[largestContour[:, :, 1].argmin()][0])
             rightPoint = tuple(largestContour[largestContour[:, :, 0].argmax()][0])
             leftPoint = tuple(largestContour[largestContour[:, :, 0].argmin()][0])
             botPoint = tuple(largestContour[largestContour[:, :, 1].argmax()][0])
 
+            # contourPointsSortedLeft = self.sortByColumn(largestContour, column=0, flipped=False)
+            # print(contourPointsSortedLeft.shape)
+            # for i, lp in enumerate(contourPointsSortedLeft):
+            #     if abs(lp.ravel()[0] - contourPointsSortedLeft[0].ravel()[0]) < self.edgeThresh :
+            #         contourPointsSortedLeft = np.delete(contourPointsSortedLeft, [i], axis=0)
+            #         self.source = cv2.circle(self.source, tuple(lp.ravel()), 4, (223, 66, 224), -1)
+
+            # print(contourPointsSortedLeft.shape)
+            # contourPointsSortedLeft = self.sortByColumn(contourPointsSortedLeft, column=1, flipped=False)
+
+            # self.source = cv2.circle(self.source, tuple(contourPointsSortedLeft[0].ravel()), 4, (0, 0, 224), -1)
+
+            sortedTopApprox = self.sortByColumn(approx, column=1, flipped=False)
+            sortedTopLeftApprox = self.sortByColumn(sortedTopApprox[:3], column=0, flipped=False)
+
             # Finding the midPoint (the point of the corner of the box not on the edge of the contour)
+            print("mid")
             midHeight = self.findHeight(leftPoint, topPoint, rightPoint)
+
             midPoint = tuple([botPoint[0], topPoint[1] + 2 * midHeight])
 
             # Find if the cube is head on or slightly head on
+            facingSlanted = False
             facingHeadon = False
             slightlyHeadon = False
-            slightlyHeadonDirection = Direction.LEFT
+            slightlyHeadonDirection = Direction.NONE
 
             # Checks for points draw from approxPolyDP
             # 4 points commonly found if camera head on to block
             # 5 points commonly found if camera at small angle to block
             # 6 points commonly found if camera is large angle to block
-            if 4 >= len(approx) > 1:
+
+            if len(approx) == 6:
+                facingSlanted = True
+                leftPoint = tuple(sortedTopLeftApprox[0].ravel())
+                rightPoint = tuple(sortedTopLeftApprox[2].ravel())
+                if self.debug:
+                    self.source = cv2.circle(self.source, tuple(sortedTopLeftApprox[0].ravel()), 4, (223, 66, 224), -1)
+                    self.source = cv2.circle(self.source, tuple(sortedTopLeftApprox[2].ravel()), 4, (223, 66, 224), -1)
+
+            elif 4 >= len(approx) > 1:
                 sortedArr = self.sortByColumn(approx, column=1, flipped=False)
 
                 if abs(sortedArr[0].ravel()[1] - sortedArr[1].ravel()[1]) < self.headOnThresh:
@@ -134,24 +173,41 @@ class PnPVision:
                 sortedLeftTop = self.sortByColumn(sortedTop[:2], column=0)
                 mid = sortedTop[2].ravel()
 
-                if self.debug:
-                    img = cv2.circle(img, tuple(sortedLeftTop[0].ravel()), 4, (223, 66, 224), -1)
-                    img = cv2.circle(img, tuple(sortedLeftTop[1].ravel()), 4, (223, 66, 224), -1)
-
-                if abs(mid[0] - sortedLeftTop[0].ravel()[0]) < self.slightlyHeadonThresh:
+                if mid[0] < centroid[0]:
                     slightlyHeadonDirection = Direction.LEFT
+                elif mid[0] >= centroid[0]:
+                    slightlyHeadonDirection = Direction.RIGHT
+
+                if self.debug:
+                    self.source = cv2.circle(self.source, tuple(sortedLeftTop[0].ravel()), 4, (223, 66, 224), -1)
+                    self.source = cv2.circle(self.source, tuple(sortedLeftTop[1].ravel()), 4, (223, 66, 224), -1)
+
+                # if abs(mid[0] - sortedLeftTop[0].ravel()[0]) < self.slightlyHeadonThresh:
+                if slightlyHeadonDirection == Direction.LEFT:
                     midPoint = leftPoint
 
                     leftPoint = tuple(sortedLeftTop[0].ravel())
                     topPoint = tuple(sortedLeftTop[1].ravel())
-                    rightPoint = tuple([midPoint[0], topPoint[1]])
+                    rightPoint = tuple([topPoint[0], midPoint[1]])
+                    # print("right")
+                    # rightPoint = self.findHeight(mid, leftPoint, topPoint)
+                    # self.modifiedImg = self.connectPoints(self.modifiedImg, [np.array(mid), np.array(leftPoint), np.array(topPoint)])
+                    # rightPoint = tuple([botPoint[0], leftPoint[1] + 2 * midHeight])
 
-                elif abs(mid[0] - sortedLeftTop[1].ravel()[0]) < self.slightlyHeadonThresh:
-                    slightlyHeadonDirection = Direction.RIGHT
+                # elif abs(mid[0] - sortedLeftTop[1].ravel()[0]) < self.slightlyHeadonThresh:
+                if slightlyHeadonDirection == Direction.RIGHT:
 
                     leftPoint = tuple(sortedLeftTop[0].ravel())
                     topPoint = tuple(sortedLeftTop[1].ravel())
-                    midPoint = tuple([leftPoint[0], rightPoint[1]])
+
+                    botLeft = self.sortByColumn(self.sortByColumn(approx, column=1, flipped=True)[:2], column=0, flipped=False)[0].ravel()
+                    if self.debug:
+                        print("botLeft: ")
+                        print(botLeft)
+                        self.modifiedImg = cv2.circle(self.modifiedImg, tuple(botLeft.ravel()), 10, (0, 0, 0), -1)
+                        midPoint = tuple([botLeft[0], rightPoint[1]])
+
+                print(slightlyHeadonDirection.name)
 
             points = np.asarray([leftPoint, topPoint, rightPoint, midPoint], dtype=np.float32)
 
@@ -175,8 +231,14 @@ class PnPVision:
             decompRMat = None
 
             _, _, _, _, _, _, eulerAngles = cv2.decomposeProjectionMatrix(projMat, decompCamMat, decompRMat, decompTVec)
-
+            self.angle = eulerAngles[1]
             distance = np.sqrt(transVectors[0].ravel() ** 2 + transVectors[1].ravel() ** 2 + transVectors[2].ravel() ** 2)
+
+            self.distance = distance
+
+            angles = -180 * self.getAngles(np.linalg.inv(rmat)) / np.pi
+            angles[0, 0] = (360 - angles[0, 0]) % 360
+            angles[1, 0] = angles[1, 0] + 90
             if self.debug:
                 self.modifiedImg = cv2.circle(self.modifiedImg, topPoint, 4, (0, 0, 255), -1)
                 self.displayText(self.modifiedImg, "topPoint", tuple(topPoint), (0, 0, 0))
@@ -190,13 +252,17 @@ class PnPVision:
                     self.modifiedImg = cv2.circle(self.modifiedImg, tuple(approxPoint[0]), 4, (0, 0, 255), -1)
                     self.displayText(self.modifiedImg, str(i + 1), tuple(approxPoint[0]), (0, 0, 0))
                     self.modifiedImg = cv2.circle(self.modifiedImg, midPoint, 4, (0, 0, 255), -1)
-                self.displayText(self.modifiedImg, "distance: %.2f ft." % (distance), (100, 100), (0, 0, 0))
+                self.displayText(self.modifiedImg, "distance: %.2f ft." % (self.distance), (100, 100), (0, 0, 0))
+                self.displayText(self.modifiedImg, "angle: %d deg." % (angles[1, 0] % 90), (100, 400), (0, 255, 0))
                 self.modifiedImg = self.drawPnPAxes(self.source, points, imgPts)
                 self.modifiedImg = self.connectPoints(self.modifiedImg, approx)
-                print(eulerAngles)
+                # print(eulerAngles)
+                self.source = self.modifiedImg
 
             # res = cv2.bitwise_and(img, img, mask=close2)
 
+            # print(angles[1,0])
+            # print(angles % 90)
         # cv2.imshow("frame2", self.source)
         # cv2.imshow("compound", compound)
         # return self.modifiedImg, compound
@@ -227,6 +293,7 @@ class PnPVision:
         theta = np.arccos((c ** 2 - a ** 2 - b ** 2) / (-2 * a * b))
 
         height = a * np.sin(theta)
+        print(int(height))
         return int(height)
 
     def connectPoints(self, img, pts):
@@ -253,6 +320,20 @@ class PnPVision:
         frame = cv2.flip(frame, 1)
         return frame
 
+    def getAngles(self, R):
+        sin_x = np.sqrt(R[2, 0] * R[2, 0] + R[2, 1] * R[2, 1])
+        validity = sin_x < 1e-6
+        if not validity:
+            z1 = np.arctan2(R[2, 0], R[2, 1])  # around z1-axis
+            x = np.arctan2(sin_x, R[2, 2])  # around x-axis
+            z2 = np.arctan2(R[0, 2], -R[1, 2])  # around z2-axis
+        else:  # gimbal lock
+            z1 = 0  # around z1-axis
+            x = np.arctan2(sin_x, R[2, 2])  # around x-axis
+            z2 = 0  # around z2-axis
+
+        return np.array([[z1], [x], [z2]])
+
 
 if __name__ == "__main__":
     for x in range(1, 5):
@@ -269,21 +350,36 @@ if __name__ == "__main__":
     lowerBound = np.array([0, 186, 64])
     upperBound = np.array([180, 255, 255])
 
+    showDebugInfo = True
     if (len(sys.argv) > 1):
-        if sys.argv[1] == '-m':
+        if sys.argv[1].find('m') != -1:
             lowerBound = np.array([18, 0, 194])
             upperBound = np.array([42, 255, 255])
 
-    pnpVision = PnPVision(lowerBound, upperBound, True)
+        if sys.argv[1].find('d') != -1:
+            showDebugInfo = True
 
+    pnpVision = PnPVision(lowerBound, upperBound, showDebugInfo)
+    # nt = NetworkTableHandler()
     while True:
         ret, src = stream.read()
-
         if ret:
             pnpVision.processImg(src)
-
-            cv2.imshow("frame2", pnpVision.source)
+            cv2.namedWindow("frame")
+            cv2.namedWindow("compound")
+            cv2.imshow("frame", pnpVision.source)
             cv2.imshow("compound", pnpVision.compound)
+
+            if (len(sys.argv) > 1):
+                if sys.argv[1].find('n') != -1:
+                    if pnpVision.angle != None:
+                        nt.setValue('angle', pnpVision.angle)
+                    if pnpVision.distance != None:
+                        nt.setValue('distance', pnpVision.distance)
+                if sys.argv[1].find('m') != -1:
+                    cv2.moveWindow("frame", 0, 0)
+                    cv2.moveWindow("compound", 0, 0)
+
             keyPressed = cv2.waitKey(33)
             if (keyPressed == ord("s")):
                 cv2.imwrite("{}.png".format("PnPVisionImg"), pnpVision.source)
