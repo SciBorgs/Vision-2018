@@ -9,7 +9,7 @@ from random import randint
 # Blue contours are the largest contours within the limit set in the code
 # Red contours are the contours with the highest extent ratio
 # Green are the contours out of the largest who are the most full/solid
-DEBUGGING = False
+DEBUGGING = True
 DEBUG_LARGEST = False
 DEBUG_EXTENT = False
 DEBUG_SOLIDITY = False
@@ -20,7 +20,7 @@ DEBUG_DISTANCE = False
 DEBUG_BOX = False
 
 os.system("v4l2-ctl -d /dev/video1"
-          " -c brightness={}".format(175 + randint(-5, 5)) +
+          " -c brightness={}".format(80 + randint(-5, 5)) +
           " -c white_balance_temperature_auto=false"
           " -c exposure_auto=1"
           " -c exposure_absolute=20")
@@ -64,12 +64,12 @@ class DistAngleVision:
         self.axis = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).reshape(-1, 3)
 
         # Class room
-        # self.lowerBound = np.array([0, 154, 43])
-        # self.upperBound = np.array([26, 255, 255])
+        self.lowerBound = np.array([17, 163, 70])
+        self.upperBound = np.array([30, 219, 227])
 
         # Staircase
-        self.lowerBound = np.array([0, 186, 64])
-        self.upperBound = np.array([180, 255, 255])
+        # self.lowerBound = np.array([0, 186, 64])
+        # self.upperBound = np.array([180, 255, 255])
 
         self.resolution = {"width": imgWidth, "height": imgHeight}
         self.degreesPerPix = fov / (np.sqrt(imgWidth ** 2 + imgHeight ** 2))
@@ -78,6 +78,8 @@ class DistAngleVision:
         self.allDistances = []
         self.xAxis = []
         self.windowsMoved = False
+
+        self.allBoxes = []
 
     def processImg(self, img):
         self.source = img
@@ -103,44 +105,43 @@ class DistAngleVision:
                 # List of [score, CScore] lists
                 sortedScores = sorted(zip(scores, notableContours), key=lambda l: l[0], reverse=True)
 
-                # if (sortedScores[0][0] > 2.5):
-                #     bestCScore = sortedScores[0][1]
-
                 for n in range(len(sortedScores)):
 
-                    if (0.7 < sortedScores[n][1].whRatio < 1.3):
-                        try:
-                            cMoments = cv2.moments(sortedScores[n][1].contour)
-                            centerPoint = (int((cMoments["m10"] / cMoments['m00'])),
-                                           int((cMoments["m01"] / cMoments["m00"])))
+                    if (sortedScores[n][0] > 2.5):
 
-                            cv2.circle(img, tuple(centerPoint), 4, (255, 255, 255), -1)
+                        if (0.7 < sortedScores[n][1].whRatio < 1.3):
+                            try:
+                                cMoments = cv2.moments(sortedScores[n][1].contour)
+                                centerPoint = (int((cMoments["m10"] / cMoments['m00'])),
+                                               int((cMoments["m01"] / cMoments["m00"])))
 
-                            minRect = cv2.minAreaRect(sortedScores[n][1].contour)
-                            box = cv2.boxPoints(minRect)
-                            box = np.int0(box)
-                            cv2.drawContours(img, [box], 0, (140, 110, 255), 2)
+                                cv2.circle(img, tuple(centerPoint), 4, (255, 255, 255), -1)
 
-                            distance = self.calcRealDistance(minRect[1][0])
-                            angle = self.calcAngle(centerPoint[0])
+                                minRect = cv2.minAreaRect(sortedScores[n][1].contour)
+                                box = cv2.boxPoints(minRect)
+                                box = np.int0(box)
+                                cv2.drawContours(img, [box], 0, (140, 110, 255), 2)
 
-                            cv2.putText(img, "Power Cube", (centerPoint[0], centerPoint[1] + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 255), 2, cv2.LINE_AA)
-                            cv2.putText(img, "{0:.2f}".format(distance), (centerPoint[0], centerPoint[1] + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (268, 52, 67), 2, cv2.LINE_AA)
-                            cv2.putText(img, "{0:.2f}".format(angle), (centerPoint[0], centerPoint[1] + 105), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 0), 2, cv2.LINE_AA)
+                                distance = self.calcRealDistance(minRect[1][0])
+                                angle = self.calcAngle(centerPoint[0])
 
-                            if (DEBUGGING):
-                                if (DEBUG_DISTANCE):
-                                    self.allDistances.append(distance)
-                                    self.xAxis.append(len(self.allDistances))
+                                cv2.putText(img, "Power Cube", (centerPoint[0], centerPoint[1] + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 255), 2, cv2.LINE_AA)
+                                cv2.putText(img, "{0:.2f}".format(distance), (centerPoint[0], centerPoint[1] + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (268, 52, 67), 2, cv2.LINE_AA)
+                                cv2.putText(img, "{0:.2f}".format(angle), (centerPoint[0], centerPoint[1] + 105), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 0), 2, cv2.LINE_AA)
 
-                                if (DEBUG_BOX):
-                                    cv2.circle(self.source, tuple(box[0]), 4, (255, 0, 0), -1)
-                                    cv2.circle(self.source, tuple(box[1]), 4, (0, 255, 0), -1)
-                                    cv2.circle(self.source, tuple(box[2]), 4, (0, 0, 255), -1)
-                                    cv2.circle(self.source, tuple(box[3]), 4, (0, 0, 0), -1)
+                                if (DEBUGGING):
+                                    if (DEBUG_DISTANCE):
+                                        self.allDistances.append(distance)
+                                        self.xAxis.append(len(self.allDistances))
 
-                        except ZeroDivisionError:
-                            pass
+                                    if (DEBUG_BOX):
+                                        cv2.circle(self.source, tuple(box[0]), 4, (255, 0, 0), -1)
+                                        cv2.circle(self.source, tuple(box[1]), 4, (0, 255, 0), -1)
+                                        cv2.circle(self.source, tuple(box[2]), 4, (0, 0, 255), -1)
+                                        cv2.circle(self.source, tuple(box[3]), 4, (0, 0, 0), -1)
+
+                            except ZeroDivisionError:
+                                pass
 
                 if (DEBUGGING):
                     self.showDebugStatements(notableContours)

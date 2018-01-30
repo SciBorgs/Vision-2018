@@ -1,0 +1,22 @@
+<annotation>
+  <folder>Both</folder>
+  <filename>     8.png</filename>
+  <segmented>0</segmented>
+  <size>
+    <width>640</width>
+    <height>480</height>
+    <depth>3</depth>
+  </size>
+  <object>
+    <name>Power_Cubes</name>
+    <pose>Unspecified</pose>
+    <truncated>0</truncated>
+    <difficult>0</difficult>
+    <bndbox>
+      <xmin>75</xmin>
+      <ymin>28</ymin>
+      <xmax>419</xmax>
+      <ymax>344</ymax>
+    </bndbox>
+  </object>
+</annotation>

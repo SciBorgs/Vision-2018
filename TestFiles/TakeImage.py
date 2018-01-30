@@ -1,18 +1,26 @@
 import cv2
 import sys
+import os
+from random import randint
+
+os.system("v4l2-ctl -d /dev/video1"
+          " -c brightness={}".format(10 + randint(-5, 5)) +
+          " -c white_balance_temperature_auto=false"
+          " -c exposure_auto=1"
+          )
 
 for x in range(1, 5):
     stream = cv2.VideoCapture(x)
 
     if (stream.isOpened()):
         print("Camera found on port: %d" % (x))
-        break;
+        break
 
 if (not stream.isOpened()):
     print("Camera not found")
     sys.exit()
 
-n = 0
+n = 61
 
 while True:
 

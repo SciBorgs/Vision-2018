@@ -4,12 +4,14 @@ import sys
 import os
 from enum import Enum
 from random import *
-from NetworkTableHandler import NetworkTableHandler
+
+# from NetworkTableHandler import NetworkTableHandler
 
 os.system("v4l2-ctl -d /dev/video1"
-          " -c brightness={}".format(0 + randint(-5, 5)) +
+          " -c brightness={}".format(175 + randint(-5, 5)) +
           " -c white_balance_temperature_auto=false"
-          " -c exposure_auto=1")
+          " -c exposure_auto=1"
+          " -c exposure_absolute=20")
 
 
 class Direction(Enum):
@@ -49,8 +51,6 @@ class PnPVision:
         self.upperBound = ubound
         self.debug = debug
 
-
-
     # frame_counter = 0
     def processImg(self, img, boxContour=None):
 
@@ -62,17 +62,16 @@ class PnPVision:
             # Filtering
             hsv = cv2.cvtColor(self.source, cv2.COLOR_BGR2HSV)
             mask = cv2.inRange(hsv, lowerBound, upperBound)
-            erode = cv2.erode(mask, self.createKernel(5))
-            dilate = cv2.dilate(erode, self.createKernel(5))
-            closed = cv2.morphologyEx(dilate, cv2.MORPH_CLOSE, self.createKernel(7))
-            erode2 = cv2.dilate(closed, self.createKernel(3))
-            close2 = cv2.morphologyEx(erode2, cv2.MORPH_CLOSE, self.createKernel(10))
+            erode = cv2.erode(mask, kernel=self.createKernel(3))
+            dilate = cv2.dilate(erode, kernel=self.createKernel(3))
+            close = cv2.morphologyEx(dilate, cv2.MORPH_CLOSE, self.createKernel(15))
+            erode2 = cv2.dilate(close, kernel=self.createKernel(7))
 
             # Combine original image and filtered mask
-            compound = cv2.bitwise_and(self.source, self.source, mask=closed)
+            compound = cv2.bitwise_and(self.source, self.source, mask=erode2)
             self.compound = compound
             # Contours
-            fstream, contours, hierarchy = cv2.findContours(closed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            fstream, contours, hierarchy = cv2.findContours(erode2, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         else:
             contours = [boxContour]
         if len(contours) > 0:
@@ -88,9 +87,6 @@ class PnPVision:
             # Approx Poly dp
             epsilon = 0.03 * cv2.arcLength(largestContour, True)
             approx = cv2.approxPolyDP(largestContour, epsilon, True)
-
-
-
 
             # Assigning points initially - they stay these values if the cube is not head on or slightly head on
             topPoint = tuple(largestContour[largestContour[:, :, 1].argmin()][0])
@@ -157,7 +153,6 @@ class PnPVision:
                     topPoint = tuple(sortedLeftTop[1].ravel())
                     midPoint = tuple([leftPoint[0], rightPoint[1]])
 
-
             points = np.asarray([leftPoint, topPoint, rightPoint, midPoint], dtype=np.float32)
 
             points = np.reshape(points, (4, 2))
@@ -200,13 +195,11 @@ class PnPVision:
                 self.modifiedImg = self.connectPoints(self.modifiedImg, approx)
                 print(eulerAngles)
 
-
-
             # res = cv2.bitwise_and(img, img, mask=close2)
 
         # cv2.imshow("frame2", self.source)
         # cv2.imshow("compound", compound)
-        #return self.modifiedImg, compound
+        # return self.modifiedImg, compound
 
     def createKernel(self, size):
         return np.ones((size, size), np.uint8)
@@ -273,7 +266,7 @@ if __name__ == "__main__":
         print("Camera not found")
         sys.exit()
 
-    lowerBound = np.array([10, 133, 60])
+    lowerBound = np.array([0, 186, 64])
     upperBound = np.array([180, 255, 255])
 
     if (len(sys.argv) > 1):
@@ -281,7 +274,7 @@ if __name__ == "__main__":
             lowerBound = np.array([18, 0, 194])
             upperBound = np.array([42, 255, 255])
 
-    pnpVision = PnPVision(lowerBound, upperBound, False)
+    pnpVision = PnPVision(lowerBound, upperBound, True)
 
     while True:
         ret, src = stream.read()

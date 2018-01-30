@@ -15,7 +15,8 @@ class ColorFilterClass(wx.Frame):
         os.system("v4l2-ctl -d /dev/video1"
                   " -c brightness={}".format(80 + randint(-5, 5)) +
                   " -c white_balance_temperature_auto=false"
-                  " -c exposure_auto=1")
+                  " -c exposure_auto=1"
+                  " -c exposure_absolute=20")
 
         self.initUI()
 
