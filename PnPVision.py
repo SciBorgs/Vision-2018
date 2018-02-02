@@ -57,9 +57,9 @@ class PnPVision:
         self.distance = None
         self.angle = None
 
+
     # frame_counter = 0
     def processImg(self, img, boxContour=None):
-
         self.source = img
         self.modifiedImg = img
         contours = None
@@ -122,7 +122,6 @@ class PnPVision:
             sortedTopLeftApprox = self.sortByColumn(sortedTopApprox[:3], column=0, flipped=False)
 
             # Finding the midPoint (the point of the corner of the box not on the edge of the contour)
-            print("mid")
             midHeight = self.findHeight(leftPoint, topPoint, rightPoint)
 
             midPoint = tuple([botPoint[0], topPoint[1] + 2 * midHeight])
@@ -206,10 +205,11 @@ class PnPVision:
                         print(botLeft)
                         self.modifiedImg = cv2.circle(self.modifiedImg, tuple(botLeft.ravel()), 10, (0, 0, 0), -1)
                         midPoint = tuple([botLeft[0], rightPoint[1]])
-
-                print(slightlyHeadonDirection.name)
+                if self.debug:
+                    print(slightlyHeadonDirection.name)
 
             points = np.asarray([leftPoint, topPoint, rightPoint, midPoint], dtype=np.float32)
+            
 
             points = np.reshape(points, (4, 2))
             objectPoints = np.reshape(self.objectPoints, (4, 3))
@@ -231,14 +231,20 @@ class PnPVision:
             decompRMat = None
 
             _, _, _, _, _, _, eulerAngles = cv2.decomposeProjectionMatrix(projMat, decompCamMat, decompRMat, decompTVec)
-            self.angle = eulerAngles[1]
-            distance = np.sqrt(transVectors[0].ravel() ** 2 + transVectors[1].ravel() ** 2 + transVectors[2].ravel() ** 2)
-
-            self.distance = distance
+            # self.angle = eulerAngles[1]
 
             angles = -180 * self.getAngles(np.linalg.inv(rmat)) / np.pi
             angles[0, 0] = (360 - angles[0, 0]) % 360
             angles[1, 0] = angles[1, 0] + 90
+            eulerY = angles[1, 0]
+            self.angle = eulerY % 90
+
+            distance = np.sqrt(transVectors[0].ravel() ** 2 + transVectors[1].ravel() ** 2 + transVectors[2].ravel() ** 2)
+
+            self.distance = distance
+
+            
+
             if self.debug:
                 self.modifiedImg = cv2.circle(self.modifiedImg, topPoint, 4, (0, 0, 255), -1)
                 self.displayText(self.modifiedImg, "topPoint", tuple(topPoint), (0, 0, 0))
@@ -253,10 +259,10 @@ class PnPVision:
                     self.displayText(self.modifiedImg, str(i + 1), tuple(approxPoint[0]), (0, 0, 0))
                     self.modifiedImg = cv2.circle(self.modifiedImg, midPoint, 4, (0, 0, 255), -1)
                 self.displayText(self.modifiedImg, "distance: %.2f ft." % (self.distance), (100, 100), (0, 0, 0))
-                self.displayText(self.modifiedImg, "angle: %d deg." % (angles[1, 0] % 90), (100, 400), (0, 255, 0))
+                self.displayText(self.modifiedImg, "angle: %d deg." % (eulerY), (100, 400), (0, 255, 0))
                 self.modifiedImg = self.drawPnPAxes(self.source, points, imgPts)
                 self.modifiedImg = self.connectPoints(self.modifiedImg, approx)
-                # print(eulerAngles)
+                print(eulerY)
                 self.source = self.modifiedImg
 
             # res = cv2.bitwise_and(img, img, mask=close2)
@@ -293,7 +299,8 @@ class PnPVision:
         theta = np.arccos((c ** 2 - a ** 2 - b ** 2) / (-2 * a * b))
 
         height = a * np.sin(theta)
-        print(int(height))
+        if self.debug:
+            print(int(height))
         return int(height)
 
     def connectPoints(self, img, pts):
@@ -336,7 +343,7 @@ class PnPVision:
 
 
 if __name__ == "__main__":
-    for x in range(1, 5):
+    for x in range(0, 5):
         stream = cv2.VideoCapture(x)
 
         if (stream.isOpened()):
@@ -350,7 +357,7 @@ if __name__ == "__main__":
     lowerBound = np.array([0, 186, 64])
     upperBound = np.array([180, 255, 255])
 
-    showDebugInfo = True
+    showDebugInfo = False
     if (len(sys.argv) > 1):
         if sys.argv[1].find('m') != -1:
             lowerBound = np.array([18, 0, 194])
