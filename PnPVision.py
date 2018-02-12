@@ -4,8 +4,7 @@ import sys
 import os
 from enum import Enum
 from random import *
-
-# from NetworkTableHandler import NetworkTableHandler
+from NetworkTableHandler import NetworkTableHandler
 
 os.system("v4l2-ctl -d /dev/video2"
           " -c brightness={}".format(200 + randint(-5, 5)) +
@@ -356,18 +355,20 @@ if __name__ == "__main__":
 
     lowerBound = np.array([0, 186, 64])
     upperBound = np.array([180, 255, 255])
-
+    nt = NetworkTableHandler()
     showDebugInfo = False
     if (len(sys.argv) > 1):
         if sys.argv[1].find('m') != -1:
             lowerBound = np.array([18, 0, 194])
             upperBound = np.array([42, 255, 255])
-
+        if sys.argv[1].find('n') != -1:
+            lowerBound = nt.getHSVValues("lower")
+            upperBound = nt.getHSVValues("upper")
         if sys.argv[1].find('d') != -1:
             showDebugInfo = True
 
     pnpVision = PnPVision(lowerBound, upperBound, showDebugInfo)
-    # nt = NetworkTableHandler()
+
     while True:
         ret, src = stream.read()
         if ret:
@@ -380,9 +381,9 @@ if __name__ == "__main__":
             if (len(sys.argv) > 1):
                 if sys.argv[1].find('n') != -1:
                     if pnpVision.angle != None:
-                        nt.setValue('angle', pnpVision.angle)
+                        nt.setValue('pnpAngle', pnpVision.angle)
                     if pnpVision.distance != None:
-                        nt.setValue('distance', pnpVision.distance)
+                        nt.setValue('pnpDistance', pnpVision.distance)
                 if sys.argv[1].find('m') != -1:
                     cv2.moveWindow("frame", 0, 0)
                     cv2.moveWindow("compound", 0, 0)

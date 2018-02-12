@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from random import randint
+from NetworkTableHandler import NetworkTableHandler
 
 # Blue contours are the largest contours within the limit set in the code
 # Red contours are the contours with the highest extent ratio
@@ -64,8 +65,8 @@ class DistAngleVision:
         self.axis = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).reshape(-1, 3)
 
         # Class room
-        self.lowerBound = np.array([17, 163, 70])
-        self.upperBound = np.array([30, 219, 227])
+        # self.lowerBound = np.array([17, 163, 70])
+        # self.upperBound = np.array([30, 219, 227])
 
         # Staircase
         # self.lowerBound = np.array([0, 186, 64])
@@ -93,7 +94,7 @@ class DistAngleVision:
         erode2 = cv2.dilate(close, kernel=self.createKernel(7))
 
         fstream, contours, hierarchy = cv2.findContours(erode2, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_SIMPLE)
-
+        canSeeCube = False
         if len(contours) > 0:
             notableContours = self.filterContours(contours, num=10)
 
@@ -111,6 +112,7 @@ class DistAngleVision:
 
                         if (0.7 < sortedScores[n][1].whRatio < 1.3):
                             try:
+                                canSeeCube = True
                                 cMoments = cv2.moments(sortedScores[n][1].contour)
                                 centerPoint = (int((cMoments["m10"] / cMoments['m00'])),
                                                int((cMoments["m01"] / cMoments["m00"])))
@@ -123,7 +125,12 @@ class DistAngleVision:
                                 cv2.drawContours(img, [box], 0, (140, 110, 255), 2)
 
                                 distance = self.calcRealDistance(minRect[1][0])
+
+                                ntHandler.setValue("distanceToCube", distance)
+
                                 angle = self.calcAngle(centerPoint[0])
+
+                                ntHandler.setValue("angleToCube", angle)
 
                                 cv2.putText(img, "Power Cube", (centerPoint[0], centerPoint[1] + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 255), 2, cv2.LINE_AA)
                                 cv2.putText(img, "{0:.2f}".format(distance), (centerPoint[0], centerPoint[1] + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (268, 52, 67), 2, cv2.LINE_AA)
@@ -148,7 +155,7 @@ class DistAngleVision:
 
         cv2.imshow("Source", self.source)
         cv2.imshow("Color Filtered", erode2)
-
+        ntHandler.setValue("canSeeCube", canSeeCube)
         if (not self.windowsMoved):
             cv2.moveWindow("Source", 75, 0)
             cv2.moveWindow("Color Filtered", 75, 550)
@@ -266,9 +273,18 @@ if __name__ == '__main__':
         print("Camera not found")
         sys.exit()
 
+    lowerBound = np.array([17, 163, 70])
+    upperBound = np.array([30, 219, 227])
+
+    ntHandler = NetworkTableHandler()
+
+
     # Lifecam is 60 degrees from left to right. Pass it only half of fov
     vision = DistAngleVision(stream.get(cv2.CAP_PROP_FRAME_WIDTH), stream.get(cv2.CAP_PROP_FRAME_HEIGHT), 30)
-
+    if (len(sys.argv) > 1):
+        if sys.argv[1].find('n') != -1:
+        vision.lowerBound = ntHandler.getHSVValues("lower")
+        vision.upperBound = ntHandler.getHSVValues("upper")
     while True:
         ret, src = stream.read()
 
