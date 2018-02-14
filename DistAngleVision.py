@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from random import randint
-from NetworkTableHandler import NetworkTableHandler
+from Vision.NetworkTableHandler import NetworkTableHandler
 
 # Blue contours are the largest contours within the limit set in the code
 # Red contours are the contours with the highest extent ratio
@@ -19,6 +19,8 @@ DEBUG_WH = True
 DEBUG_DISTANCE = False
 
 DEBUG_BOX = False
+
+SHOW_OUTPUTS = False
 
 os.system("v4l2-ctl -d /dev/video1"
           " -c brightness={}".format(80 + randint(-5, 5)) +
@@ -40,9 +42,9 @@ class CScore:
         return self.size + self.extent + self.solidity
 
 
-class DistAngleVision:
+class Vision:
 
-    def __init__(self, imgWidth, imgHeight, fov):
+    def __init__(self, imgWidth, imgHeight, fov, ntHandler):
 
         self.camIntrinsics = np.asarray([[879.4009463329488, 0.0, 341.3659246478685],
                                          [0.0, 906.4264609420143, 241.09943855444936],
@@ -74,6 +76,8 @@ class DistAngleVision:
 
         self.resolution = {"width": imgWidth, "height": imgHeight}
         self.degreesPerPix = fov / (np.sqrt(imgWidth ** 2 + imgHeight ** 2))
+
+        self.ntHandler = ntHandler
 
         # Counter for x axis of scatter graph of DEBUG_DISTANCE function
         self.allDistances = []
@@ -125,16 +129,15 @@ class DistAngleVision:
                                 cv2.drawContours(img, [box], 0, (140, 110, 255), 2)
 
                                 distance = self.calcRealDistance(minRect[1][0])
-
-                                ntHandler.setValue("distanceToCube", distance)
-
                                 angle = self.calcAngle(centerPoint[0])
-
-                                ntHandler.setValue("angleToCube", angle)
+                                self.ntHandler.setValue("distanceToCube", distance)
+                                self.ntHandler.setValue("angleToCube", angle)
 
                                 cv2.putText(img, "Power Cube", (centerPoint[0], centerPoint[1] + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 255), 2, cv2.LINE_AA)
-                                cv2.putText(img, "{0:.2f}".format(distance), (centerPoint[0], centerPoint[1] + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (268, 52, 67), 2, cv2.LINE_AA)
-                                cv2.putText(img, "{0:.2f}".format(angle), (centerPoint[0], centerPoint[1] + 105), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 0), 2, cv2.LINE_AA)
+
+                                if (SHOW_OUTPUTS):
+                                    cv2.putText(img, "{0:.2f}".format(distance), (centerPoint[0], centerPoint[1] + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (268, 52, 67), 2, cv2.LINE_AA)
+                                    cv2.putText(img, "{0:.2f}".format(angle), (centerPoint[0], centerPoint[1] + 105), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 0), 2, cv2.LINE_AA)
 
                                 if (DEBUGGING):
                                     if (DEBUG_DISTANCE):
@@ -155,7 +158,8 @@ class DistAngleVision:
 
         cv2.imshow("Source", self.source)
         cv2.imshow("Color Filtered", erode2)
-        ntHandler.setValue("canSeeCube", canSeeCube)
+        self.ntHandler.setValue("canSeeCube", canSeeCube)
+
         if (not self.windowsMoved):
             cv2.moveWindow("Source", 75, 0)
             cv2.moveWindow("Color Filtered", 75, 550)
@@ -258,47 +262,3 @@ class DistAngleVision:
 
     def getSourceImg(self):
         return self.source
-
-
-if __name__ == '__main__':
-
-    for x in range(1, 5):
-        stream = cv2.VideoCapture(x)
-
-        if (stream.isOpened()):
-            print("Camera found on port: %d" % (x))
-            break
-
-    if (not stream.isOpened()):
-        print("Camera not found")
-        sys.exit()
-
-    lowerBound = np.array([17, 163, 70])
-    upperBound = np.array([30, 219, 227])
-
-    ntHandler = NetworkTableHandler()
-
-
-    # Lifecam is 60 degrees from left to right. Pass it only half of fov
-    vision = DistAngleVision(stream.get(cv2.CAP_PROP_FRAME_WIDTH), stream.get(cv2.CAP_PROP_FRAME_HEIGHT), 30)
-    if (len(sys.argv) > 1):
-        if sys.argv[1].find('n') != -1:
-        vision.lowerBound = ntHandler.getHSVValues("lower")
-        vision.upperBound = ntHandler.getHSVValues("upper")
-    while True:
-        ret, src = stream.read()
-
-        plt.ion()
-        axes = plt.gca()
-        axes.set_ylim([0, 500])
-
-        if (ret):
-
-            vision.processImg(src)
-
-            keyPressed = cv2.waitKey(33)
-            if (keyPressed == ord("s")):
-                cv2.imwrite("{}.png".format("PnPVisionImg"), vision.getSourceImg())
-            elif (keyPressed == ord("q")):
-                cv2.destroyAllWindows()
-                sys.exit()
