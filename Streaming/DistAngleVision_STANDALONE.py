@@ -5,25 +5,27 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from random import randint
-from NetworkTableHandler import NetworkTableHandler
 
-# Blue contours are the largest contours within the limit set in the code
-# Red contours are the contours with the highest extent ratio
-# Green are the contours out of the largest who are the most full/solid
+# |-------- Key for the corresponding debug colors and their values --------|
+# Blue is the size
+# Red is the extent ratio
+# Green is the solidity number
+# Gray is the width height ratio of the contour
+# White is the contour score
+# Blue is distance
+# Cyan is angle
 DEBUGGING = True
-DEBUG_LARGEST = False
+DEBUG_SIZE = False
 DEBUG_EXTENT = False
 DEBUG_SOLIDITY = False
-DEBUG_SCORE = True
 DEBUG_WH = True
+DEBUG_SCORE = True
 DEBUG_DISTANCE = False
 
 DEBUG_BOX = False
 
-SHOW_OUTPUTS = False
-
-os.system("v4l2-ctl -d /dev/video1"
-          " -c brightness={}".format(80 + randint(-5, 5)) +
+os.system("v4l2-ctl -d /dev/video0"
+          " -c brightness={}".format(100 + randint(-5, 5)) +
           " -c white_balance_temperature_auto=false"
           " -c exposure_auto=1"
           " -c exposure_absolute=20")
@@ -42,7 +44,7 @@ class CScore:
         return self.size + self.extent + self.solidity
 
 
-class Vision:
+class DistAngleVision:
 
     def __init__(self, imgWidth, imgHeight, fov):
 
@@ -55,10 +57,16 @@ class Vision:
         # In inches. Average 13 and 11 so that we can find the 13 x 13 x 11 cube on all sides within margin of error
         self.cubeWidthReal = 12
 
-        ntHandler = NetworkTableHandler()
+        self.distortCoeffs = np.asarray([0.24562790316739747, -4.700752268937957, 0.0031650173316281876, -0.0279002999438822, 17.514821989419733])
 
-        self.lowerBound = ntHandler.getHSVValues("lower")
-        self.upperBound = ntHandler.getHSVValues("upper")
+        # 3D coordinates of the points we think we can find on the box.
+        self.objectPoints = np.asarray([[0, 0, 0],
+                                        [0, 0, 1],
+                                        [1, 0, 1],
+                                        [1, 0, 0]], dtype=np.float32)
+
+        # The vector matrices which are drawn to fit the plane of the face we are finding
+        self.axis = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).reshape(-1, 3)
 
         # Class room
         # self.lowerBound = np.array([17, 163, 70])
@@ -68,10 +76,12 @@ class Vision:
         # self.lowerBound = np.array([0, 186, 64])
         # self.upperBound = np.array([180, 255, 255])
 
+        # Yoga room
+        self.lowerBound = np.array([18, 148, 107])
+        self.upperBound = np.array([31, 255, 219])
+
         self.resolution = {"width": imgWidth, "height": imgHeight}
         self.degreesPerPix = fov / (np.sqrt(imgWidth ** 2 + imgHeight ** 2))
-
-        self.ntHandler = ntHandler
 
         # Counter for x axis of scatter graph of DEBUG_DISTANCE function
         self.allDistances = []
@@ -93,8 +103,6 @@ class Vision:
 
         fstream, contours, hierarchy = cv2.findContours(erode2, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_SIMPLE)
 
-
-        canSeeCube = False
         if len(contours) > 0:
             notableContours = self.filterContours(contours, num=10)
 
@@ -112,7 +120,6 @@ class Vision:
 
                         if (0.7 < sortedScores[n][1].whRatio < 1.3):
                             try:
-                                canSeeCube = True
                                 cMoments = cv2.moments(sortedScores[n][1].contour)
                                 centerPoint = (int((cMoments["m10"] / cMoments['m00'])),
                                                int((cMoments["m01"] / cMoments["m00"])))
@@ -126,14 +133,10 @@ class Vision:
 
                                 distance = self.calcRealDistance(minRect[1][0])
                                 angle = self.calcAngle(centerPoint[0])
-                                self.ntHandler.setValue("distanceToCube", distance)
-                                self.ntHandler.setValue("angleToCube", angle)
 
                                 cv2.putText(img, "Power Cube", (centerPoint[0], centerPoint[1] + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 255), 2, cv2.LINE_AA)
-
-                                if (SHOW_OUTPUTS):
-                                    cv2.putText(img, "{0:.2f}".format(distance), (centerPoint[0], centerPoint[1] + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (268, 52, 67), 2, cv2.LINE_AA)
-                                    cv2.putText(img, "{0:.2f}".format(angle), (centerPoint[0], centerPoint[1] + 105), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 0), 2, cv2.LINE_AA)
+                                cv2.putText(img, "{0:.2f}".format(distance), (centerPoint[0], centerPoint[1] + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (268, 52, 67), 2, cv2.LINE_AA)
+                                cv2.putText(img, "{0:.2f}".format(angle), (centerPoint[0], centerPoint[1] + 105), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 0), 2, cv2.LINE_AA)
 
                                 if (DEBUGGING):
                                     if (DEBUG_DISTANCE):
@@ -152,15 +155,16 @@ class Vision:
                 if (DEBUGGING):
                     self.showDebugStatements(notableContours)
 
-        self.ntHandler.setValue("canSeeCube", canSeeCube)
+        cv2.imshow("Source", self.source)
+        cv2.imshow("Color Filtered", erode2)
 
-        # cv2.imshow("Source", self.source)
-        # cv2.imshow("Color Filtered", erode2)
+        if (not self.windowsMoved):
+            cv2.moveWindow("Source", 75, 0)
+            cv2.moveWindow("Color Filtered", 75, 550)
+            self.windowsMoved = True
 
-        # if (not self.windowsMoved):
-        #     cv2.moveWindow("Source", 75, 0)
-        #     cv2.moveWindow("Color Filtered", 75, 550)
-        #     self.windowsMoved = True
+    def createKernel(self, size):
+        return np.ones((size, size), np.uint8)
 
     def filterContours(self, contours, num):
         cAreas = []
@@ -202,9 +206,6 @@ class Vision:
 
         return scores
 
-    def createKernel(self, size):
-        return np.ones((size, size), np.uint8)
-
     def calcRealDistance(self, pxWidth):
         return (self.cubeWidthReal * self.focalLength) / pxWidth
 
@@ -226,7 +227,7 @@ class Vision:
             except ZeroDivisionError:
                 pass
 
-            if (DEBUG_LARGEST):
+            if (DEBUG_SIZE):
                 cv2.drawContours(self.source, score.contour, -1, (255, 0, 0), 2)
                 cv2.putText(self.source, "{}".format(l), tuple(centerPoint), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
                 cv2.putText(self.source, "{0:.2f}".format(score.size), (centerPoint[0] + 25, centerPoint[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2, cv2.LINE_AA)
@@ -259,3 +260,38 @@ class Vision:
 
     def getSourceImg(self):
         return self.source
+
+
+if __name__ == '__main__':
+
+    for x in range(0, 5):
+        stream = cv2.VideoCapture(x)
+
+        if (stream.isOpened()):
+            print("Camera found on port: %d" % (x))
+            break
+
+    if (not stream.isOpened()):
+        print("Camera not found")
+        sys.exit()
+
+    # Lifecam is 60 degrees from left to right. Pass it only half of fov
+    vision = DistAngleVision(stream.get(cv2.CAP_PROP_FRAME_WIDTH), stream.get(cv2.CAP_PROP_FRAME_HEIGHT), 30)
+
+    while True:
+        ret, src = stream.read()
+
+        plt.ion()
+        axes = plt.gca()
+        axes.set_ylim([0, 500])
+
+        if (ret):
+
+            vision.processImg(src)
+
+            keyPressed = cv2.waitKey(33)
+            if (keyPressed == ord("s")):
+                cv2.imwrite("{}.png".format("PnPVisionImg"), vision.getSourceImg())
+            elif (keyPressed == ord("q")):
+                cv2.destroyAllWindows()
+                sys.exit()

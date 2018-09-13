@@ -1,11 +1,8 @@
-import sys
-
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 from random import randint
-from NetworkTableHandler import NetworkTableHandler
 
 # Blue contours are the largest contours within the limit set in the code
 # Red contours are the contours with the highest extent ratio
@@ -22,11 +19,11 @@ DEBUG_BOX = False
 
 SHOW_OUTPUTS = False
 
-os.system("v4l2-ctl -d /dev/video1"
-          " -c brightness={}".format(80 + randint(-5, 5)) +
-          " -c white_balance_temperature_auto=false"
-          " -c exposure_auto=1"
-          " -c exposure_absolute=20")
+# os.system("v4l2-ctl -d /dev/video1"
+#           " -c brightness={}".format(80 + randint(-5, 5)) +
+#           " -c white_balance_temperature_auto=false"
+#           " -c exposure_auto=1"
+#           " -c exposure_absolute=20")
 
 
 class CScore:
@@ -44,7 +41,7 @@ class CScore:
 
 class Vision:
 
-    def __init__(self, imgWidth, imgHeight, fov):
+    def __init__(self, imgWidth, imgHeight, fov, ntHandler):
 
         self.camIntrinsics = np.asarray([[879.4009463329488, 0.0, 341.3659246478685],
                                          [0.0, 906.4264609420143, 241.09943855444936],
@@ -55,10 +52,16 @@ class Vision:
         # In inches. Average 13 and 11 so that we can find the 13 x 13 x 11 cube on all sides within margin of error
         self.cubeWidthReal = 12
 
-        ntHandler = NetworkTableHandler()
+        self.distortCoeffs = np.asarray([0.24562790316739747, -4.700752268937957, 0.0031650173316281876, -0.0279002999438822, 17.514821989419733])
 
-        self.lowerBound = ntHandler.getHSVValues("lower")
-        self.upperBound = ntHandler.getHSVValues("upper")
+        # 3D coordinates of the points we think we can find on the box.
+        self.objectPoints = np.asarray([[0, 0, 0],
+                                        [0, 0, 1],
+                                        [1, 0, 1],
+                                        [1, 0, 0]], dtype=np.float32)
+
+        # The vector matrices which are drawn to fit the plane of the face we are finding
+        self.axis = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).reshape(-1, 3)
 
         # Class room
         # self.lowerBound = np.array([17, 163, 70])
@@ -67,6 +70,10 @@ class Vision:
         # Staircase
         # self.lowerBound = np.array([0, 186, 64])
         # self.upperBound = np.array([180, 255, 255])
+
+        #LA Example
+        self.lowerBound = np.array([98, 38, 94])
+        self.upperBound = np.array([136, 124, 184])
 
         self.resolution = {"width": imgWidth, "height": imgHeight}
         self.degreesPerPix = fov / (np.sqrt(imgWidth ** 2 + imgHeight ** 2))
@@ -92,8 +99,6 @@ class Vision:
         erode2 = cv2.dilate(close, kernel=self.createKernel(7))
 
         fstream, contours, hierarchy = cv2.findContours(erode2, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_SIMPLE)
-
-
         canSeeCube = False
         if len(contours) > 0:
             notableContours = self.filterContours(contours, num=10)
@@ -152,15 +157,18 @@ class Vision:
                 if (DEBUGGING):
                     self.showDebugStatements(notableContours)
 
+        cv2.imshow("Source", cv2.resize(self.source, (0, 0), fx=1.5, fy=1.5))
+        cv2.imshow("Color Filtered", cv2.resize(erode2, (0, 0), fx=1.5, fy=1.5))
+
         self.ntHandler.setValue("canSeeCube", canSeeCube)
 
-        # cv2.imshow("Source", self.source)
-        # cv2.imshow("Color Filtered", erode2)
+        if (not self.windowsMoved):
+            cv2.moveWindow("Source", 75, 0)
+            cv2.moveWindow("Color Filtered", 1000, 550)
+            self.windowsMoved = True
 
-        # if (not self.windowsMoved):
-        #     cv2.moveWindow("Source", 75, 0)
-        #     cv2.moveWindow("Color Filtered", 75, 550)
-        #     self.windowsMoved = True
+    def createKernel(self, size):
+        return np.ones((size, size), np.uint8)
 
     def filterContours(self, contours, num):
         cAreas = []
@@ -201,9 +209,6 @@ class Vision:
                 break
 
         return scores
-
-    def createKernel(self, size):
-        return np.ones((size, size), np.uint8)
 
     def calcRealDistance(self, pxWidth):
         return (self.cubeWidthReal * self.focalLength) / pxWidth

@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from random import randint
-from NetworkTableHandler import NetworkTableHandler
 
 # Blue contours are the largest contours within the limit set in the code
 # Red contours are the contours with the highest extent ratio
@@ -55,14 +54,20 @@ class Vision:
         # In inches. Average 13 and 11 so that we can find the 13 x 13 x 11 cube on all sides within margin of error
         self.cubeWidthReal = 12
 
-        ntHandler = NetworkTableHandler()
+        self.distortCoeffs = np.asarray([0.24562790316739747, -4.700752268937957, 0.0031650173316281876, -0.0279002999438822, 17.514821989419733])
 
-        self.lowerBound = ntHandler.getHSVValues("lower")
-        self.upperBound = ntHandler.getHSVValues("upper")
+        # 3D coordinates of the points we think we can find on the box.
+        self.objectPoints = np.asarray([[0, 0, 0],
+                                        [0, 0, 1],
+                                        [1, 0, 1],
+                                        [1, 0, 0]], dtype=np.float32)
+
+        # The vector matrices which are drawn to fit the plane of the face we are finding
+        self.axis = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).reshape(-1, 3)
 
         # Class room
-        # self.lowerBound = np.array([17, 163, 70])
-        # self.upperBound = np.array([30, 219, 227])
+        self.lowerBound = np.array([17, 163, 70])
+        self.upperBound = np.array([30, 219, 227])
 
         # Staircase
         # self.lowerBound = np.array([0, 186, 64])
@@ -70,8 +75,6 @@ class Vision:
 
         self.resolution = {"width": imgWidth, "height": imgHeight}
         self.degreesPerPix = fov / (np.sqrt(imgWidth ** 2 + imgHeight ** 2))
-
-        self.ntHandler = ntHandler
 
         # Counter for x axis of scatter graph of DEBUG_DISTANCE function
         self.allDistances = []
@@ -92,8 +95,6 @@ class Vision:
         erode2 = cv2.dilate(close, kernel=self.createKernel(7))
 
         fstream, contours, hierarchy = cv2.findContours(erode2, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_SIMPLE)
-
-
         canSeeCube = False
         if len(contours) > 0:
             notableContours = self.filterContours(contours, num=10)
@@ -126,8 +127,6 @@ class Vision:
 
                                 distance = self.calcRealDistance(minRect[1][0])
                                 angle = self.calcAngle(centerPoint[0])
-                                self.ntHandler.setValue("distanceToCube", distance)
-                                self.ntHandler.setValue("angleToCube", angle)
 
                                 cv2.putText(img, "Power Cube", (centerPoint[0], centerPoint[1] + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 255), 2, cv2.LINE_AA)
 
@@ -152,8 +151,6 @@ class Vision:
                 if (DEBUGGING):
                     self.showDebugStatements(notableContours)
 
-        self.ntHandler.setValue("canSeeCube", canSeeCube)
-
         # cv2.imshow("Source", self.source)
         # cv2.imshow("Color Filtered", erode2)
 
@@ -161,6 +158,9 @@ class Vision:
         #     cv2.moveWindow("Source", 75, 0)
         #     cv2.moveWindow("Color Filtered", 75, 550)
         #     self.windowsMoved = True
+
+    def createKernel(self, size):
+        return np.ones((size, size), np.uint8)
 
     def filterContours(self, contours, num):
         cAreas = []
@@ -201,9 +201,6 @@ class Vision:
                 break
 
         return scores
-
-    def createKernel(self, size):
-        return np.ones((size, size), np.uint8)
 
     def calcRealDistance(self, pxWidth):
         return (self.cubeWidthReal * self.focalLength) / pxWidth
